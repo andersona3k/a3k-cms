@@ -71,6 +71,38 @@
     background:#0d141c; border:1px solid var(--line); border-radius:10px; padding:18px; margin:10px 0; color:#fff; }
   .src { font-size:11px; padding:1px 6px; border-radius:999px; border:1px solid var(--line); margin-left:6px; }
   .src.group { color:var(--warn); } .src.device { color:#5fd08a; }
+
+  /* ---- aba Dispositivos em tela cheia ---- */
+  body[data-tab="pane-dispositivos"] main,
+  body[data-tab="pane-dispositivos"] #tabbar { max-width:none; }
+  #pane-dispositivos .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  #devTbl { table-layout:auto; }
+  #devTbl th, #devTbl td { vertical-align:middle; }
+  #devTbl select { padding:5px 7px; font-size:12px; }
+  #devTbl .actcell { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  #devTbl .actcell button { padding:5px 9px; font-size:12px; }
+
+  tr.grp-row td { background:#1b2733; border-top:1px solid var(--acc); border-bottom:1px solid var(--acc); padding:8px; }
+  tr.grp-row.nogrp td { background:#141c25; border-color:var(--line); }
+  .grp-head { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .grp-head .gname { font-weight:700; font-size:14px; }
+  .grp-head .gcount { color:var(--mut); font-size:12px; }
+  .grp-head .gspace { flex:1; }
+
+  tr.dev-row td { border-bottom:1px solid var(--line); }
+  tr.dev-row.on  td:first-child { box-shadow: inset 4px 0 0 #3fd08a; }
+  tr.dev-row.off td:first-child { box-shadow: inset 4px 0 0 #e06a6a; }
+  tr.dev-row.on  td { background:rgba(63,208,138,.12); }
+  tr.dev-row.off td { background:rgba(224,106,106,.12); }
+  td:first-child { padding-left:14px; }
+
+  .ptype { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; }
+  .ptype svg { display:block; }
+  .ptbadge { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px;
+    border-radius:6px; font:700 11px/1 system-ui,sans-serif; color:#fff; }
+  .stat { font-size:11px; font-weight:700; padding:2px 9px; border-radius:999px; white-space:nowrap; }
+  .stat.on  { background:#173a29; color:#5fd08a; }
+  .stat.off { background:#3a1f1f; color:#ed8c8c; }
 </style>
 </head>
 <body>
@@ -93,7 +125,6 @@
 <nav id="tabbar" class="hidden">
   <button data-target="pane-biblioteca">Biblioteca</button>
   <button data-target="pane-playlist">Playlists</button>
-  <button data-target="pane-grupos">Grupos</button>
   <button data-target="pane-dispositivos">Dispositivos</button>
   <button data-target="adminCard" id="tabAdminBtn" class="hidden">Administração</button>
 </nav>
@@ -145,24 +176,16 @@
     <p class="muted">Arraste pela alca <span style="cursor:grab">⠿</span> para reordenar. A duracao salva ao sair do campo.</p>
   </div>
 
-  <div class="card tabpane" id="pane-grupos">
-    <h2>Grupos de dispositivos</h2>
-    <div class="row">
-      <div><label>Novo grupo</label><input id="grpName" placeholder="Loja Centro" /></div>
-      <button id="grpCreateBtn">Criar grupo</button>
-    </div>
-    <table id="grpTbl"><thead><tr><th>Grupo</th><th>Devices</th><th>Playlist do grupo</th><th>Ação</th></tr></thead><tbody></tbody></table>
-  </div>
-
   <div class="card tabpane" id="pane-dispositivos">
     <h2>Dispositivos</h2>
-    <p class="muted">Abra <code id="playerUrl"></code> num monitor/aba (pareamento aberto), ou use <b>Add player</b> para gerar um codigo com nome/grupo/tipo ja definidos.</p>
-    <div class="row">
-      <button id="addPlayerBtn">Add player</button>
+    <p class="muted">Abra <code id="playerUrl"></code> num monitor/aba (pareamento aberto), ou use <b>+ Dispositivo</b> para gerar um codigo com nome/grupo/tipo ja definidos. Cada grupo e uma linha-mae; os players aparecem nas linhas abaixo.</p>
+    <div class="toolbar">
+      <button id="grpCreateBtn">+ Grupo</button>
+      <button id="addPlayerBtn">+ Dispositivo</button>
       <button class="ghost" id="devRefreshBtn">atualizar</button>
     </div>
     <table id="devTbl"><thead><tr>
-      <th>ID</th><th>Serial</th><th>Nome</th><th>Tipo</th><th>Status</th><th>Grupo</th><th>Playlist efetiva</th><th>Contato</th><th>Ação</th>
+      <th>ID</th><th>Serial</th><th>Nome</th><th>Tipo</th><th>Status</th><th>Playlist efetiva</th><th>Contato</th><th>Ação</th>
     </tr></thead><tbody></tbody></table>
   </div>
 
@@ -310,7 +333,7 @@
   }
 
   // ---- abas ----
-  var TABS = ['pane-biblioteca', 'pane-playlist', 'pane-grupos', 'pane-dispositivos', 'adminCard'];
+  var TABS = ['pane-biblioteca', 'pane-playlist', 'pane-dispositivos', 'adminCard'];
   var _tabsWired = false;
   var _bootTab = '';
   function tabAvailable(id) {
@@ -328,6 +351,7 @@
     for (var i = 0; i < btns.length; i++) {
       btns[i].classList.toggle('active', btns[i].getAttribute('data-target') === id);
     }
+    document.body.setAttribute('data-tab', id);
     try { localStorage.setItem('a3k_admin_tab', id); } catch (e) {}
     if (location.hash.slice(1) !== id) {
       try { history.replaceState(null, '', '#' + id); } catch (e) { location.hash = id; }
@@ -770,103 +794,173 @@
     return s;
   }
 
-  // ---- grupos ----
+  // ---- grupos + dispositivos (visao unificada) ----
   $('grpCreateBtn').onclick = function () {
-    var name = $('grpName').value.trim(); if (!name) return;
+    var name = (prompt('Nome do novo grupo') || '').trim();
+    if (!name) return;
     jpost('/api/device-groups', { name: name })
-      .then(function () { log('grupo criado'); $('grpName').value = ''; loadGroups().then(loadDevices); })
+      .then(function () { log('grupo "' + name + '" criado'); loadGroups().then(loadDevices); })
       .catch(function (e) { log('grupo: ' + e.message); });
   };
+
   function loadGroups() {
-    return api('/api/device-groups').then(function (d) {
-      state.groups = d.groups;
-      var tb = $('grpTbl').querySelector('tbody'); tb.innerHTML = '';
-      d.groups.forEach(function (g) {
-        var tr = document.createElement('tr');
-        tr.innerHTML =
-          '<td>' + esc(g.name) + '</td><td>' + g.device_count + '</td><td></td><td></td>';
-        var plTd = tr.children[2], actTd = tr.children[3];
-        var sel = playlistSelect(g.assigned_playlist_id);
-        var assignBtn = document.createElement('button'); assignBtn.textContent = 'playlist';
-        plTd.appendChild(sel); plTd.appendChild(assignBtn);
-        assignBtn.onclick = function () {
-          var call = sel.value
-            ? jpost('/api/device-groups/' + g.id + '/assign', { playlist_id: Number(sel.value) })
-            : api('/api/device-groups/' + g.id + '/assign', { method: 'DELETE' });
-          call.then(function () { log('grupo ' + g.name + ' -> playlist ' + (sel.value || '—'));
-            loadGroups(); loadDevices(); }).catch(function (e) { log(e.message); });
-        };
-        var renBtn = document.createElement('button'); renBtn.className = 'ghost'; renBtn.textContent = 'renomear';
-        renBtn.onclick = function () {
-          var n = prompt('Novo nome do grupo', g.name); if (!n) return;
-          jpost('/api/device-groups/' + g.id, { name: n }, 'PATCH')
-            .then(function () { loadGroups().then(loadDevices); }).catch(function (e) { log(e.message); });
-        };
-        var delBtn = document.createElement('button'); delBtn.className = 'danger'; delBtn.textContent = 'apagar';
-        delBtn.onclick = function () {
-          if (!confirm('Apagar o grupo "' + g.name + '"? Os devices ficam sem grupo.')) return;
-          api('/api/device-groups/' + g.id, { method: 'DELETE' })
-            .then(function (r) { log('grupo apagado (' + r.ungrouped_devices + ' devices desagrupados)');
-              loadGroups().then(loadDevices); }).catch(function (e) { log(e.message); });
-        };
-        actTd.appendChild(renBtn); actTd.appendChild(delBtn);
-        tb.appendChild(tr);
-      });
-    });
+    return api('/api/device-groups').then(function (d) { state.groups = d.groups; });
   }
 
-  // ---- devices ----
+  // icone por plataforma (Android / Windows / Tizen / webOS)
+  function ptypeIcon(t) {
+    if (t === 'android') {
+      return '<span class="ptype" title="Android"><svg viewBox="0 0 24 24" width="20" height="20" fill="#3ddc84">' +
+        '<path d="M17.6 9.5c.5 0 .9.4.9.9v4.6a.9.9 0 0 1-1.8 0V10.4c0-.5.4-.9.9-.9zM6.4 9.5c.5 0 .9.4.9.9v4.6a.9.9 0 0 1-1.8 0V10.4c0-.5.4-.9.9-.9zM8 9.3v7.2c0 .5.4.9.9.9h1v3a.9.9 0 0 0 1.8 0v-3h.6v3a.9.9 0 0 0 1.8 0v-3h1c.5 0 .9-.4.9-.9V9.3H8zm7.5-4 1-1a.4.4 0 0 0-.6-.6l-1.1 1.1A5.6 5.6 0 0 0 12 4.1c-.7 0-1.4.1-2 .4L8.9 3.4a.4.4 0 1 0-.6.6l1 1A5 5 0 0 0 7 8.5h10a5 5 0 0 0-1.5-3.2zM9.8 7a.6.6 0 1 1 0-1.3A.6.6 0 0 1 9.8 7zm4.4 0a.6.6 0 1 1 0-1.3.6.6 0 0 1 0 1.3z"/></svg></span>';
+    }
+    if (t === 'windows') {
+      return '<span class="ptype" title="Windows"><svg viewBox="0 0 24 24" width="18" height="18" fill="#4aa3f0">' +
+        '<path d="M3 5.4 10.4 4.3v7.2H3zm8.4-1.2L21 3v8.5h-9.6zM3 12.5h7.4v7.2L3 18.6zm8.4 0H21V21l-9.6-1.3z"/></svg></span>';
+    }
+    if (t === 'tizen') return '<span class="ptype" title="Tizen (Samsung)"><span class="ptbadge" style="background:#1428a0">S</span></span>';
+    if (t === 'webos') return '<span class="ptype" title="webOS (LG)"><span class="ptbadge" style="background:#a50034;font-size:9px">LG</span></span>';
+    return '<span class="ptype" title="indefinido"><span class="ptbadge" style="background:#2a3947;color:#8fa3b5">?</span></span>';
+  }
+
+  function deviceOnline(dev) {
+    if (dev.status === 'disabled') return false;
+    if (!dev.last_seen) return false;
+    var ms = Date.parse(String(dev.last_seen).replace(' ', 'T') + 'Z');
+    return !isNaN(ms) && (Date.now() - ms) < 3 * 60 * 1000;
+  }
+  function fmtAgo(ts) {
+    if (!ts) return '—';
+    var ms = Date.parse(String(ts).replace(' ', 'T') + 'Z');
+    if (isNaN(ms)) return esc(String(ts));
+    var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    var txt = s < 60 ? 'ha ' + s + 's'
+      : s < 3600 ? 'ha ' + Math.round(s / 60) + 'min'
+      : s < 86400 ? 'ha ' + Math.round(s / 3600) + 'h'
+      : 'ha ' + Math.round(s / 86400) + 'd';
+    return '<span title="' + esc(String(ts)) + ' UTC">' + txt + '</span>';
+  }
+
+  function devRowActions(dev) {
+    var cell = document.createElement('div');
+    cell.className = 'actcell';
+
+    var gsel = groupSelect(dev.group_id);
+    gsel.title = 'mover para outro grupo';
+    gsel.onchange = function () {
+      jpost('/api/devices/' + dev.id, { group_id: gsel.value ? Number(gsel.value) : null }, 'PATCH')
+        .then(function () { log('device ' + dev.serial + ' grupo=' + (gsel.value || '—'));
+          loadGroups().then(loadDevices); }).catch(function (e) { log(e.message); });
+    };
+
+    var psel = playlistSelect(dev.own_playlist ? dev.own_playlist.id : '');
+    psel.title = 'playlist propria do device (vazio = herda do grupo)';
+    var pbtn = document.createElement('button'); pbtn.textContent = 'atribuir';
+    pbtn.onclick = function () {
+      var call = psel.value
+        ? jpost('/api/devices/' + dev.id + '/assign', { playlist_id: Number(psel.value) })
+        : api('/api/devices/' + dev.id + '/assign', { method: 'DELETE' });
+      call.then(function () { log('device ' + dev.serial + ' -> playlist ' + (psel.value || '—(herda do grupo)'));
+        loadDevices(); }).catch(function (e) { log('assign: ' + e.message); });
+    };
+    var dbtn = document.createElement('button'); dbtn.className = 'danger'; dbtn.textContent = 'apagar';
+    dbtn.onclick = function () {
+      if (!confirm('Apagar o device ' + dev.serial + (dev.name ? ' (' + dev.name + ')' : '') +
+        '? Se o player ainda existir, ele pareia de novo como device novo.')) return;
+      api('/api/devices/' + dev.id, { method: 'DELETE' })
+        .then(function () { log('device ' + dev.serial + ' apagado'); loadGroups().then(loadDevices); })
+        .catch(function (e) { log('apagar device: ' + e.message); });
+    };
+
+    cell.appendChild(gsel); cell.appendChild(psel); cell.appendChild(pbtn); cell.appendChild(dbtn);
+    return cell;
+  }
+
+  function devRow(dev) {
+    var on = deviceOnline(dev);
+    var tr = document.createElement('tr');
+    tr.className = 'dev-row ' + (on ? 'on' : 'off');
+    var eff = dev.effective_playlist;
+    var hw = dev.hardware_id || '';
+    var hwShort = hw ? esc(hw.length > 22 ? hw.slice(0, 22) + '…' : hw) : '—';
+    tr.innerHTML =
+      '<td>' + dev.id + '</td>' +
+      '<td><code>' + esc(dev.serial) + '</code><br><span class="muted" style="font-size:11px" title="' + esc(hw) + '">hw: ' + hwShort + '</span></td>' +
+      '<td>' + esc(dev.name || '—') + '</td>' +
+      '<td>' + ptypeIcon(dev.player_type) + '</td>' +
+      '<td><span class="stat ' + (on ? 'on">online' : 'off">offline') + '</span></td>' +
+      '<td>' + (eff ? esc(eff.name) : '<span class="muted">nenhuma</span>') + '</td>' +
+      '<td class="muted">' + fmtAgo(dev.last_seen) + '</td>' +
+      '<td></td>';
+    tr.children[7].appendChild(devRowActions(dev));
+    return tr;
+  }
+
+  function grpRow(g, count) {
+    var tr = document.createElement('tr');
+    tr.className = 'grp-row' + (g ? '' : ' nogrp');
+    var td = document.createElement('td'); td.colSpan = 8;
+    var head = document.createElement('div'); head.className = 'grp-head';
+
+    if (!g) {
+      head.innerHTML = '<span class="gname">Sem grupo</span><span class="gcount">' + count + ' player(s)</span>';
+      td.appendChild(head); tr.appendChild(td); return tr;
+    }
+    head.innerHTML = '<span class="gname">▸ ' + esc(g.name) + '</span>' +
+      '<span class="gcount">' + count + ' player(s)</span><span class="gspace"></span>';
+
+    var sel = playlistSelect(g.assigned_playlist_id);
+    sel.title = 'playlist do grupo (herdada pelos players sem playlist propria)';
+    var assignBtn = document.createElement('button'); assignBtn.textContent = 'playlist';
+    assignBtn.onclick = function () {
+      var call = sel.value
+        ? jpost('/api/device-groups/' + g.id + '/assign', { playlist_id: Number(sel.value) })
+        : api('/api/device-groups/' + g.id + '/assign', { method: 'DELETE' });
+      call.then(function () { log('grupo ' + g.name + ' -> playlist ' + (sel.value || '—'));
+        loadGroups().then(loadDevices); }).catch(function (e) { log(e.message); });
+    };
+    var renBtn = document.createElement('button'); renBtn.className = 'ghost'; renBtn.textContent = 'renomear';
+    renBtn.onclick = function () {
+      var n = (prompt('Novo nome do grupo', g.name) || '').trim(); if (!n) return;
+      jpost('/api/device-groups/' + g.id, { name: n }, 'PATCH')
+        .then(function () { loadGroups().then(loadDevices); }).catch(function (e) { log(e.message); });
+    };
+    var delBtn = document.createElement('button'); delBtn.className = 'danger'; delBtn.textContent = 'apagar';
+    delBtn.onclick = function () {
+      if (!confirm('Apagar o grupo "' + g.name + '"? Os players ficam sem grupo.')) return;
+      api('/api/device-groups/' + g.id, { method: 'DELETE' })
+        .then(function (r) { log('grupo apagado (' + r.ungrouped_devices + ' players desagrupados)');
+          loadGroups().then(loadDevices); }).catch(function (e) { log(e.message); });
+    };
+    head.appendChild(sel); head.appendChild(assignBtn); head.appendChild(renBtn); head.appendChild(delBtn);
+    td.appendChild(head); tr.appendChild(td);
+    return tr;
+  }
+
   function loadDevices() {
     return api('/api/devices').then(function (d) {
       var tb = $('devTbl').querySelector('tbody'); tb.innerHTML = '';
+      var byGroup = {}, ungrouped = [];
       d.devices.forEach(function (dev) {
-        var tr = document.createElement('tr');
-        var eff = dev.effective_playlist;
-        var effHtml = eff
-          ? esc(eff.name) + ' (v' + eff.version + ')<span class="src ' + eff.source + '">' +
-            (eff.source === 'group' ? 'herdada' : 'propria') + '</span>'
-          : '<span class="muted">nenhuma</span>';
-        var hw = dev.hardware_id || '';
-        var hwShort = hw ? esc(hw.length > 22 ? hw.slice(0, 22) + '…' : hw) : '<span class="muted">—</span>';
-        tr.innerHTML =
-          '<td>' + dev.id + '</td><td><code>' + dev.serial + '</code><br>' +
-          '<span class="muted" style="font-size:11px" title="' + esc(hw) + '">hw: ' + hwShort + '</span></td>' +
-          '<td>' + esc(dev.name || '—') +
-          '</td><td>' + dev.player_type + '</td><td><span class="pill">' + dev.status + '</span></td>' +
-          '<td></td><td>' + effHtml + '</td><td class="muted">' + (dev.last_seen || '—') + '</td><td></td>';
-        var grpTd = tr.children[5], actTd = tr.children[8];
-
-        var gsel = groupSelect(dev.group_id);
-        gsel.onchange = function () {
-          jpost('/api/devices/' + dev.id, { group_id: gsel.value ? Number(gsel.value) : null }, 'PATCH')
-            .then(function () { log('device ' + dev.serial + ' grupo=' + (gsel.value || '—'));
-              loadGroups(); loadDevices(); }).catch(function (e) { log(e.message); });
-        };
-        grpTd.appendChild(gsel);
-
-        var psel = playlistSelect(dev.own_playlist ? dev.own_playlist.id : '');
-        var pbtn = document.createElement('button'); pbtn.textContent = 'atribuir';
-        pbtn.onclick = function () {
-          var call = psel.value
-            ? jpost('/api/devices/' + dev.id + '/assign', { playlist_id: Number(psel.value) })
-            : api('/api/devices/' + dev.id + '/assign', { method: 'DELETE' });
-          call.then(function () { log('device ' + dev.serial + ' -> playlist ' + (psel.value || '—(herda do grupo)'));
-            loadDevices(); }).catch(function (e) { log('assign: ' + e.message); });
-        };
-        var dbtn = document.createElement('button'); dbtn.className = 'danger'; dbtn.textContent = 'apagar';
-        dbtn.onclick = function () {
-          if (!confirm('Apagar o device ' + dev.serial + (dev.name ? ' (' + dev.name + ')' : '') +
-            '? Se o player ainda existir, ele pareia de novo como device novo.')) return;
-          api('/api/devices/' + dev.id, { method: 'DELETE' })
-            .then(function () { log('device ' + dev.serial + ' apagado'); loadDevices(); loadGroups(); })
-            .catch(function (e) { log('apagar device: ' + e.message); });
-        };
-        actTd.appendChild(psel); actTd.appendChild(pbtn); actTd.appendChild(dbtn);
-        tb.appendChild(tr);
+        if (dev.group_id) (byGroup[dev.group_id] = byGroup[dev.group_id] || []).push(dev);
+        else ungrouped.push(dev);
       });
+      (state.groups || []).forEach(function (g) {
+        var kids = byGroup[g.id] || [];
+        tb.appendChild(grpRow(g, kids.length));
+        kids.forEach(function (dev) { tb.appendChild(devRow(dev)); });
+      });
+      if (ungrouped.length) {
+        tb.appendChild(grpRow(null, ungrouped.length));
+        ungrouped.forEach(function (dev) { tb.appendChild(devRow(dev)); });
+      }
+      if (!d.devices.length && !(state.groups || []).length) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="8" class="muted">Nenhum grupo ou dispositivo. Use "+ Grupo" / "+ Dispositivo".</td>';
+        tb.appendChild(tr);
+      }
     });
   }
-  $('devRefreshBtn').onclick = function () { loadGroups(); loadDevices(); };
+  $('devRefreshBtn').onclick = function () { loadGroups().then(loadDevices); };
 
   // ---- Add player ----
   var apPoll = null;
@@ -898,7 +992,7 @@
             clearInterval(apPoll);
             $('apWait').textContent = 'Pareado: ' + (r.request.device ? r.request.device.serial : 'ok') + ' ✓';
             log('player pareado: ' + (r.request.device ? r.request.device.serial : ''));
-            loadGroups(); loadDevices();
+            loadGroups().then(loadDevices);
           } else if (r.request.status !== 'pending') {
             clearInterval(apPoll); $('apWait').textContent = 'Solicitacao ' + r.request.status;
           }
@@ -1065,7 +1159,7 @@
         else if (/HTTP 403|permissao/.test(e.message)) { /* usuario sem acesso admin */ }
         else log(e.message);
       });
-    if (!window._devPoll) window._devPoll = setInterval(function () { loadGroups(); loadDevices(); }, 10000);
+    if (!window._devPoll) window._devPoll = setInterval(function () { loadGroups().then(loadDevices); }, 10000);
   }
 
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {

@@ -255,10 +255,16 @@ src/
     player.js           pair/new (com codigo), manifest (?v & ?p), heartbeat
 public/
   player/index.html    player kiosk (vanilla) — segue ?p= p/ detectar troca de playlist
-  admin/index.html     painel em ABAS (Biblioteca · Playlists · Grupos · Dispositivos ·
+  admin/index.html     painel em ABAS (Biblioteca · Playlists · Dispositivos ·
                        Administracao) + barra de Log retratil no rodape. Aba lembrada
                        em localStorage e no hash da URL (#pane-playlist etc.); a aba
-                       Administracao so aparece com permissao roles/users:manage
+                       Administracao so aparece com permissao roles/users:manage.
+                       Aba Dispositivos = tela cheia, visao unificada grupo+players:
+                       cada grupo e uma linha-mae (playlist do grupo, renomear, apagar)
+                       e os players entram nas linhas abaixo. Tipo = icone da
+                       plataforma; Status online/offline pelo last_seen (<3min);
+                       linha verde = online, vermelha = offline. "+ Grupo" / "+ Dispositivo"
+                       na barra de acoes.
 node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
