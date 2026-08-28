@@ -100,19 +100,23 @@
       <div><label>Nova playlist</label><input id="plName" placeholder="Vitrine" /></div>
       <button id="plCreateBtn">Criar</button>
       <div><label>Playlist ativa</label><select id="plSelect"></select></div>
-      <div><label>Orientação</label><select id="plRotation">
+      <div><label>Orientação (padrão)</label><select id="plRotation">
         <option value="0">Horizontal</option>
-        <option value="90">Vertical ↻ (90°)</option>
+        <option value="90">V 90°</option>
+        <option value="90m">V 90° esp.</option>
+        <option value="270">V 270°</option>
         <option value="180">Invertido (180°)</option>
-        <option value="270">Vertical ↺ (270°)</option>
       </select></div>
-      <div><label>Asset</label><select id="plAsset"></select></div>
-      <div><label>Duracao (s)</label><input id="plDur" type="number" value="10" style="width:80px" /></div>
+      <div><label>Arquivo</label><select id="plAsset"></select></div>
+      <div><label>Duração (s)</label><input id="plDur" type="number" value="10" style="width:80px" /></div>
       <button id="plAddBtn">Adicionar item</button>
       <button class="ghost" id="plPreviewBtn">Preview</button>
       <button class="danger" id="plDeleteBtn">Apagar playlist</button>
     </div>
-    <table id="plItemsTbl"><thead><tr><th style="width:24px"></th><th>#</th><th>Asset</th><th>Tipo</th><th>Duracao (s)</th><th>Horario</th><th></th></tr></thead><tbody id="plItemsBody"></tbody></table>
+    <table id="plItemsTbl"><thead><tr>
+      <th style="width:24px"></th><th>#</th><th>Arquivo</th><th>Tipo</th><th>Formato</th>
+      <th>Orientação</th><th>Duração</th><th>Horário</th><th>Ações</th>
+    </tr></thead><tbody id="plItemsBody"></tbody></table>
     <p class="muted" id="plVersion"></p>
     <p class="muted">Arraste pela alca <span style="cursor:grab">⠿</span> para reordenar. A duracao salva ao sair do campo.</p>
   </div>
@@ -439,17 +443,22 @@
         state.activePlaylist = d.playlist.id; return loadPlaylists(); })
       .catch(function (e) { log('playlist: ' + e.message); });
   };
+  function oriValue(p) {
+    if (!p) return '0';
+    return String(p.rotation || 0) + (p.mirror ? 'm' : '');
+  }
   $('plSelect').onchange = function () {
     state.activePlaylist = Number(this.value);
     var act = state.playlists.find(function (p) { return p.id === state.activePlaylist; });
-    $('plRotation').value = String(act ? (act.rotation || 0) : 0);
+    $('plRotation').value = oriValue(act);
     loadPlaylistItems();
   };
   $('plRotation').onchange = function () {
     if (!state.activePlaylist) return;
-    var rot = Number(this.value);
-    jpost('/api/playlists/' + state.activePlaylist, { rotation: rot }, 'PATCH')
-      .then(function (d) { log('playlist orientação=' + rot + '° (v' + d.playlist.version + ')');
+    var v = this.value;
+    var body = { rotation: Number(v.replace('m', '')), mirror: v.indexOf('m') >= 0 ? 1 : 0 };
+    jpost('/api/playlists/' + state.activePlaylist, body, 'PATCH')
+      .then(function (d) { log('playlist orientação=' + v + ' (v' + d.playlist.version + ')');
         loadPlaylists(); })
       .catch(function (e) { log('orientação: ' + e.message); });
   };
@@ -484,7 +493,7 @@
       if (!state.activePlaylist && d.playlists[0]) state.activePlaylist = d.playlists[0].id;
       if (state.activePlaylist) sel.value = state.activePlaylist;
       var act = d.playlists.find(function (p) { return p.id === state.activePlaylist; });
-      $('plRotation').value = String(act ? (act.rotation || 0) : 0);
+      $('plRotation').value = oriValue(act);
       return loadPlaylistItems();
     });
   }
@@ -497,24 +506,74 @@
       d.items.forEach(function (it, idx) {
         var tr = document.createElement('tr');
         tr.setAttribute('data-item', it.id);
-        var dot = it.active_now ? '<span title="no ar agora" style="color:#5fd08a">●</span> '
-                                : '<span title="fora do horario" style="color:#e0a12f">●</span> ';
+        if (it.suspended) tr.style.opacity = '0.45';
+
+        // Formato: H/V + resolucao do arquivo
+        var fmt = '<span class="muted">—</span>';
+        if (it.width && it.height) {
+          fmt = (it.width >= it.height ? 'H' : 'V') + ' ' + it.width + '×' + it.height;
+        }
+
+        // Orientacao: value "" herda | "0" | "90" | "90m" (espelhado) | "270"
+        var curOri = it.rotation == null ? '' : String(it.rotation) + (it.mirror ? 'm' : '');
+        function oriOpt(v, label) {
+          return '<option value="' + v + '"' + (v === curOri ? ' selected' : '') + '>' + label + '</option>';
+        }
+        var oriSel = '<select class="oriSel">' +
+          oriOpt('', 'Herda') + oriOpt('0', 'Horizontal') + oriOpt('90', 'V 90°') +
+          oriOpt('90m', 'V 90° esp.') + oriOpt('270', 'V 270°') + '</select>';
+
+        // Duracao: video = travada (duracao do arquivo); imagem = editavel
+        var durCell = it.duration_locked
+          ? '<span title="duração do vídeo (não editável)">' + Math.round(it.duration) + 's 🔒</span>'
+          : '<input class="durInput" type="number" min="0.5" step="0.5" value="' + it.duration + '" />';
+
+        // Horario: Sempre / Condicional (clicavel)
+        var sdot = it.schedule
+          ? (it.active_now ? '<span title="no ar agora" style="color:#5fd08a">●</span> '
+                           : '<span title="fora do horário" style="color:#e0a12f">●</span> ')
+          : '';
+        var horCell = sdot + '<a href="#" class="sched-btn" style="color:var(--acc)">' +
+          (it.schedule ? 'Condicional' : 'Sempre') + '</a>';
+
         tr.innerHTML =
-          '<td class="drag" title="arraste">⠿</td><td>' + (idx + 1) + '</td><td>' + esc(it.filename) +
-          '</td><td>' + it.type +
-          '</td><td><input class="durInput" type="number" min="0.5" step="0.5" value="' + it.duration + '" /></td>' +
-          '<td>' + (it.schedule ? dot : '') + '<span class="muted" style="font-size:12px">' + schedFmt(it.schedule) +
-          '</span> <button class="ghost sched-btn">⏰</button></td>' +
-          '<td><button class="ghost" data-del="' + it.id + '">remover</button></td>';
+          '<td class="drag" title="arraste">⠿</td><td>' + (idx + 1) + '</td>' +
+          '<td' + (it.suspended ? ' style="text-decoration:line-through"' : '') + '>' + esc(it.filename) + '</td>' +
+          '<td>' + it.type + '</td><td>' + fmt + '</td>' +
+          '<td>' + oriSel + '</td><td>' + durCell + '</td><td>' + horCell + '</td>' +
+          '<td><button class="ghost sus-btn">' + (it.suspended ? 'Retomar' : 'Suspender') + '</button> ' +
+          '<button class="danger del-btn">Remover</button></td>';
         tb.appendChild(tr);
-        tr.querySelector('.sched-btn').onclick = function () { openSchedEditor(it); };
-        tr.querySelector('.durInput').onchange = function () {
+
+        tr.querySelector('.sched-btn').onclick = function (e) { e.preventDefault(); openSchedEditor(it); };
+
+        tr.querySelector('.oriSel').onchange = function () {
+          var v = this.value;
+          var body = v === ''
+            ? { rotation: null, mirror: null }
+            : { rotation: Number(v.replace('m', '')), mirror: v.indexOf('m') >= 0 ? 1 : 0 };
+          jpost('/api/playlists/' + state.activePlaylist + '/items/' + it.id, body, 'PATCH')
+            .then(function (r) { log('item ' + it.id + ' orientação ' + (v || 'herda') + ', v' + r.version);
+              loadPlaylists(); })
+            .catch(function (e) { log('orientação: ' + e.message); loadPlaylistItems(); });
+        };
+
+        var di = tr.querySelector('.durInput');
+        if (di) di.onchange = function () {
           var v = Number(this.value);
           jpost('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { duration: v }, 'PATCH')
             .then(function (r) { log('item ' + it.id + ' dur=' + v + ', v' + r.version); loadPlaylists(); })
-            .catch(function (e) { log('duracao: ' + e.message); loadPlaylistItems(); });
+            .catch(function (e) { log('duração: ' + e.message); loadPlaylistItems(); });
         };
-        tr.querySelector('[data-del]').onclick = function () {
+
+        tr.querySelector('.sus-btn').onclick = function () {
+          jpost('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { suspended: !it.suspended }, 'PATCH')
+            .then(function (r) { log('item ' + it.id + (it.suspended ? ' retomado' : ' suspenso') + ', v' + r.version);
+              loadPlaylistItems(); loadPlaylists(); })
+            .catch(function (e) { log('suspender: ' + e.message); });
+        };
+
+        tr.querySelector('.del-btn').onclick = function () {
           api('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { method: 'DELETE' })
             .then(function (r) { log('item removido, v' + r.version); loadPlaylistItems(); loadPlaylists(); });
         };
@@ -591,11 +650,7 @@
     api('/api/playlists/' + state.activePlaylist + '/manifest').then(function (m) {
       if (!m.items.length) return log('playlist sem itens');
       pv.items = m.items; pv.idx = 0; pv.playing = true;
-      var st = $('previewStage');
-      var rot = Number(m.rotation) || 0;
-      if (rot === 90 || rot === 270) { st.style.width = '45vw'; st.style.height = '80vh'; }
-      else { st.style.width = '80vw'; st.style.height = '80vh'; }
-      st.style.transform = rot ? 'rotate(' + rot + 'deg)' : '';
+      pv.plRot = Number(m.rotation) || 0; pv.plMir = m.mirror ? 1 : 0;
       $('previewModal').classList.remove('hidden');
       $('pvPlay').textContent = 'pausar';
       pvRender();
@@ -606,6 +661,12 @@
     if ($('previewModal').classList.contains('hidden')) return;
     var it = pv.items[pv.idx];
     var st = $('previewStage'); st.innerHTML = '';
+    // orientacao efetiva do item (herda da playlist)
+    var rot = it.rotation != null ? Number(it.rotation) : pv.plRot;
+    var mir = it.mirror != null ? it.mirror : pv.plMir;
+    if (rot === 90 || rot === 270) { st.style.width = '42vw'; st.style.height = '78vh'; }
+    else { st.style.width = '78vw'; st.style.height = '78vh'; }
+    st.style.transform = (rot ? 'rotate(' + rot + 'deg)' : '') + (mir ? ' scaleX(-1)' : '');
     $('pvLabel').textContent = (pv.idx + 1) + '/' + pv.items.length + ' · ' + it.filename + ' · ' + it.duration + 's';
     if (it.type === 'video') {
       var v = document.createElement('video');

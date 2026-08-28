@@ -27,7 +27,8 @@ function itemsOf(db, playlistId) {
   return db
     .prepare(
       `SELECT pi.id, pi.asset_id, pi.ordem, pi.duration, pi.schedule,
-              a.type, a.filename, a.url, a.hash, a.size_bytes
+              pi.rotation, pi.mirror, pi.suspended,
+              a.type, a.filename, a.url, a.hash, a.size_bytes, a.width, a.height, a.format
          FROM playlist_items pi
          JOIN assets a ON a.id = pi.asset_id
         WHERE pi.playlist_id = ?
@@ -37,11 +38,30 @@ function itemsOf(db, playlistId) {
     .map((r) => {
       let schedule = null;
       if (r.schedule) { try { schedule = JSON.parse(r.schedule); } catch { schedule = null; } }
-      return { ...r, schedule, active_now: isActive(schedule, now) };
+      return {
+        ...r,
+        schedule,
+        suspended: !!r.suspended,
+        duration_locked: r.type === 'video',
+        active_now: !r.suspended && isActive(schedule, now),
+      };
     });
 }
 
 const ROTATIONS = [0, 90, 180, 270];
+
+function parseRotation(v, { nullable } = {}) {
+  if (v === undefined) return { skip: true };
+  if (v === null || v === '') return nullable ? { value: null } : { error: 'rotation obrigatoria' };
+  const n = Number(v);
+  if (!ROTATIONS.includes(n)) return { error: 'rotation deve ser 0, 90, 180 ou 270' };
+  return { value: n };
+}
+function parseBool01(v, { nullable } = {}) {
+  if (v === undefined) return { skip: true };
+  if (v === null) return nullable ? { value: null } : { value: 0 };
+  return { value: v ? 1 : 0 };
+}
 
 // POST /api/playlists  { name, rotation? }
 router.post('/', (req, res) => {
@@ -116,17 +136,19 @@ router.patch('/:id', (req, res) => {
     db.prepare(`UPDATE playlists SET name = ?, updated_at = datetime('now') WHERE id = ?`)
       .run(name, playlist.id);
   }
-  if (b.rotation !== undefined) {
-    const rotation = Number(b.rotation);
-    if (!ROTATIONS.includes(rotation)) {
-      return res.status(400).json({ error: 'rotation deve ser 0, 90, 180 ou 270' });
-    }
-    if (rotation !== playlist.rotation) {
-      // rotacao muda a renderizacao -> forca re-sync no player
-      db.prepare(
-        `UPDATE playlists SET rotation = ?, version = version + 1, updated_at = datetime('now') WHERE id = ?`
-      ).run(rotation, playlist.id);
-    }
+  const rot = parseRotation(b.rotation);
+  if (rot.error) return res.status(400).json({ error: rot.error });
+  const mir = parseBool01(b.mirror);
+
+  const sets = [];
+  const vals = [];
+  if (!rot.skip && rot.value !== playlist.rotation) { sets.push('rotation = ?'); vals.push(rot.value); }
+  if (!mir.skip && mir.value !== playlist.mirror) { sets.push('mirror = ?'); vals.push(mir.value); }
+  if (sets.length) {
+    // muda a renderizacao -> forca re-sync no player
+    sets.push(`version = version + 1`, `updated_at = datetime('now')`);
+    vals.push(playlist.id);
+    db.prepare(`UPDATE playlists SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
   }
   res.json({ playlist: getPlaylistScoped(db, playlist.id, req.auth.companyId) });
 });
@@ -153,7 +175,8 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true, removed_assignments: targets.length });
 });
 
-// POST /api/playlists/:id/items  { asset_id, duration?, ordem?, schedule? }
+// POST /api/playlists/:id/items  { asset_id, duration?, ordem?, schedule?, rotation?, mirror?, suspended? }
+// Video: a duracao e SEMPRE a do arquivo (ignora `duration` do body).
 router.post('/:id/items', (req, res) => {
   const db = getDb();
   const playlist = getPlaylistScoped(db, req.params.id, req.auth.companyId);
@@ -166,10 +189,14 @@ router.post('/:id/items', (req, res) => {
     .get(assetId, req.auth.companyId);
   if (!asset) return res.status(400).json({ error: 'asset_id invalido' });
 
-  const sched = validateSchedule(req.body ? req.body.schedule : undefined);
+  const b = req.body || {};
+  const sched = validateSchedule(b.schedule);
   if (!sched.ok) return res.status(400).json({ error: sched.error });
+  const rot = parseRotation(b.rotation, { nullable: true });
+  if (rot.error) return res.status(400).json({ error: rot.error });
+  const mir = parseBool01(b.mirror, { nullable: true });
 
-  let ordem = req.body.ordem;
+  let ordem = b.ordem;
   if (ordem === undefined || ordem === null) {
     const max = db
       .prepare('SELECT COALESCE(MAX(ordem), -1) AS m FROM playlist_items WHERE playlist_id = ?')
@@ -177,16 +204,24 @@ router.post('/:id/items', (req, res) => {
     ordem = max + 1;
   }
   const duration =
-    req.body.duration != null ? Number(req.body.duration) : asset.duration || 10;
+    asset.type === 'video'
+      ? (asset.duration || 10)
+      : (b.duration != null ? Number(b.duration) : (asset.duration || 10));
 
   db.exec('BEGIN');
   try {
     const info = db
       .prepare(
-        `INSERT INTO playlist_items (playlist_id, asset_id, ordem, duration, schedule)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO playlist_items (playlist_id, asset_id, ordem, duration, schedule, rotation, mirror, suspended)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(playlist.id, assetId, ordem, duration, sched.value ? JSON.stringify(sched.value) : null);
+      .run(
+        playlist.id, assetId, ordem, duration,
+        sched.value ? JSON.stringify(sched.value) : null,
+        rot.skip ? null : rot.value,
+        mir.skip ? null : mir.value,
+        b.suspended ? 1 : 0
+      );
     bumpVersion(db, playlist.id);
     db.exec('COMMIT');
     res.status(201).json({
@@ -199,22 +234,28 @@ router.post('/:id/items', (req, res) => {
   }
 });
 
-// PATCH /api/playlists/:id/items/:itemId  { duration?, ordem?, schedule? }
-// schedule: objeto p/ definir, null p/ limpar (sempre no ar).
+// PATCH /api/playlists/:id/items/:itemId
+//   { duration?, ordem?, schedule?, rotation?, mirror?, suspended? }
+// schedule/rotation/mirror: null limpa (rotation/mirror -> herda da playlist).
+// Video: `duration` e ignorada (a duracao e a do arquivo).
 router.patch('/:id/items/:itemId', (req, res) => {
   const db = getDb();
   const playlist = getPlaylistScoped(db, req.params.id, req.auth.companyId);
   if (!playlist) return res.status(404).json({ error: 'playlist nao encontrada' });
 
   const item = db
-    .prepare('SELECT * FROM playlist_items WHERE id = ? AND playlist_id = ?')
+    .prepare(
+      `SELECT pi.*, a.type AS asset_type FROM playlist_items pi
+         JOIN assets a ON a.id = pi.asset_id
+        WHERE pi.id = ? AND pi.playlist_id = ?`
+    )
     .get(Number(req.params.itemId), playlist.id);
   if (!item) return res.status(404).json({ error: 'item nao encontrado' });
 
   const b = req.body || {};
   const sets = [];
   const vals = [];
-  if (b.duration !== undefined) {
+  if (b.duration !== undefined && item.asset_type !== 'video') {
     const d = Number(b.duration);
     if (!Number.isFinite(d) || d <= 0) return res.status(400).json({ error: 'duration invalida' });
     sets.push('duration = ?'); vals.push(d);
@@ -228,6 +269,16 @@ router.patch('/:id/items/:itemId', (req, res) => {
     const s = validateSchedule(b.schedule);
     if (!s.ok) return res.status(400).json({ error: s.error });
     sets.push('schedule = ?'); vals.push(s.value ? JSON.stringify(s.value) : null);
+  }
+  {
+    const rot = parseRotation(b.rotation, { nullable: true });
+    if (rot.error) return res.status(400).json({ error: rot.error });
+    if (!rot.skip) { sets.push('rotation = ?'); vals.push(rot.value); }
+    const mir = parseBool01(b.mirror, { nullable: true });
+    if (!mir.skip) { sets.push('mirror = ?'); vals.push(mir.value); }
+  }
+  if (b.suspended !== undefined) {
+    sets.push('suspended = ?'); vals.push(b.suspended ? 1 : 0);
   }
   if (!sets.length) return res.status(400).json({ error: 'nada para atualizar' });
 
@@ -333,29 +384,43 @@ router.put('/:id/items', (req, res) => {
 
   const assetIds = items.map((i) => Number(i.asset_id));
   const placeholders = assetIds.map(() => '?').join(',') || 'NULL';
-  const found = db
-    .prepare(`SELECT id FROM assets WHERE company_id = ? AND id IN (${placeholders})`)
-    .all(req.auth.companyId, ...assetIds)
-    .map((r) => r.id);
-  if (found.length !== new Set(assetIds).size) {
+  const assetRows = db
+    .prepare(`SELECT id, type, duration FROM assets WHERE company_id = ? AND id IN (${placeholders})`)
+    .all(req.auth.companyId, ...assetIds);
+  if (assetRows.length !== new Set(assetIds).size) {
     return res.status(400).json({ error: 'algum asset_id e invalido' });
   }
+  const assetById = new Map(assetRows.map((a) => [a.id, a]));
 
-  const schedules = [];
+  const prepared = [];
   for (const it of items) {
     const s = validateSchedule(it.schedule);
     if (!s.ok) return res.status(400).json({ error: s.error });
-    schedules.push(s.value ? JSON.stringify(s.value) : null);
+    const rot = parseRotation(it.rotation, { nullable: true });
+    if (rot.error) return res.status(400).json({ error: rot.error });
+    const mir = parseBool01(it.mirror, { nullable: true });
+    const a = assetById.get(Number(it.asset_id));
+    const duration =
+      a.type === 'video' ? (a.duration || 10) : (it.duration != null ? Number(it.duration) : 10);
+    prepared.push({
+      schedule: s.value ? JSON.stringify(s.value) : null,
+      rotation: rot.skip ? null : rot.value,
+      mirror: mir.skip ? null : mir.value,
+      suspended: it.suspended ? 1 : 0,
+      duration,
+    });
   }
 
   db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM playlist_items WHERE playlist_id = ?').run(playlist.id);
     const ins = db.prepare(
-      `INSERT INTO playlist_items (playlist_id, asset_id, ordem, duration, schedule) VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO playlist_items (playlist_id, asset_id, ordem, duration, schedule, rotation, mirror, suspended)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     );
     items.forEach((it, idx) => {
-      ins.run(playlist.id, Number(it.asset_id), idx, it.duration != null ? Number(it.duration) : 10, schedules[idx]);
+      const p = prepared[idx];
+      ins.run(playlist.id, Number(it.asset_id), idx, p.duration, p.schedule, p.rotation, p.mirror, p.suspended);
     });
     bumpVersion(db, playlist.id);
     db.exec('COMMIT');

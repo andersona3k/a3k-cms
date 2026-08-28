@@ -29,13 +29,14 @@ function resolvePlaylistId(db, device) {
 // Itens de uma playlist no formato do manifest (mesmo shape p/ device e preview).
 // `activeAt` (Date) opcional: filtra pelo day-parting naquele instante.
 function playlistManifestItems(db, playlistId, activeAt) {
+  // itens suspensos nunca entram no manifest.
   const rows = db
     .prepare(
-      `SELECT pi.id, pi.ordem, pi.duration, pi.schedule,
+      `SELECT pi.id, pi.ordem, pi.duration, pi.schedule, pi.rotation, pi.mirror,
               a.type, a.filename, a.url, a.hash, a.size_bytes, a.mime
          FROM playlist_items pi
          JOIN assets a ON a.id = pi.asset_id
-        WHERE pi.playlist_id = ?
+        WHERE pi.playlist_id = ? AND pi.suspended = 0
         ORDER BY pi.ordem, pi.id`
     )
     .all(playlistId);
@@ -55,6 +56,9 @@ function playlistManifestItems(db, playlistId, activeAt) {
       hash: r.hash ? `sha256:${r.hash}` : null,
       bytes: r.size_bytes,
       schedule,
+      // NULL = herda a orientacao da playlist
+      rotation: r.rotation,
+      mirror: r.mirror,
     };
   });
 
@@ -71,6 +75,7 @@ function buildPlaylistManifest(playlist, activeAt) {
     playlist: { id: playlist.id, name: playlist.name },
     version: playlist.version,
     rotation: playlist.rotation || 0,
+    mirror: playlist.mirror ? 1 : 0,
     generatedAt: new Date().toISOString(),
     items: playlistManifestItems(db, playlist.id, activeAt),
   };
@@ -88,6 +93,7 @@ function buildManifest(device) {
       playlist: null,
       version: 0,
       rotation: 0,
+      mirror: 0,
       generatedAt: new Date().toISOString(),
       items: [],
     };

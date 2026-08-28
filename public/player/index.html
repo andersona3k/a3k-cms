@@ -6,15 +6,12 @@
 <title>A3K Player</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  /* orientacao (giro + espelho) aplicada por JS inline em #stage e #status */
   #stage {
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
     display: flex; align-items: center; justify-content: center;
     transform-origin: top left;
   }
-  /* rotacao definida na playlist (aplicada por JS: rot90 / rot180 / rot270) */
-  #stage.rot90,  #status.rot90  { width: 100vh; height: 100vw; transform: translateX(100vw) rotate(90deg); transform-origin: top left; }
-  #stage.rot180, #status.rot180 { transform: rotate(180deg); transform-origin: center; }
-  #stage.rot270, #status.rot270 { width: 100vh; height: 100vw; transform: translateY(100vh) rotate(-90deg); transform-origin: top left; }
   #stage > * {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     object-fit: contain; background: #000;
@@ -61,7 +58,7 @@
 (function () {
   'use strict';
 
-  var PLAYER_VERSION = '2026-08-28.5';
+  var PLAYER_VERSION = '2026-08-28.6';
   var API = location.origin;
   var POLL_MS = 15000;
   var HEARTBEAT_MS = 60000;
@@ -125,6 +122,7 @@
   var advanceTimer = null;
   var activeSig = '';   // assinatura do subconjunto ativo, p/ detectar mudanca
   var manifestName = null;
+  var plRotation = 0, plMirror = 0;   // orientacao padrao da playlist
 
   // ---- day-parting: espelha src/lib/schedule.js, avaliado no relogio local ----
   function schedToMinutes(hhmm) {
@@ -220,11 +218,27 @@
     });
   }
 
-  function applyRotation(deg) {
-    [stage, statusEl].forEach(function (el) {
-      el.classList.remove('rot90', 'rot180', 'rot270');
-      if (deg === 90 || deg === 180 || deg === 270) el.classList.add('rot' + deg);
-    });
+  // Aplica giro + espelho num elemento fixo em tela cheia (top:0/left:0).
+  function applyOrient(el, rot, mirror) {
+    rot = [0, 90, 180, 270].indexOf(rot) >= 0 ? rot : 0;
+    var mir = mirror ? ' scaleX(-1)' : '';
+    if (rot === 90) {
+      el.style.width = '100vh'; el.style.height = '100vw';
+      el.style.transformOrigin = 'top left';
+      el.style.transform = 'translateX(100vw) rotate(90deg)' + mir;
+    } else if (rot === 270) {
+      el.style.width = '100vh'; el.style.height = '100vw';
+      el.style.transformOrigin = 'top left';
+      el.style.transform = 'translateY(100vh) rotate(-90deg)' + mir;
+    } else if (rot === 180) {
+      el.style.width = '100vw'; el.style.height = '100vh';
+      el.style.transformOrigin = 'center';
+      el.style.transform = 'rotate(180deg)' + mir;
+    } else {
+      el.style.width = '100vw'; el.style.height = '100vh';
+      el.style.transformOrigin = 'center';
+      el.style.transform = mirror ? 'scaleX(-1)' : '';
+    }
   }
 
   function applyManifest(m) {
@@ -235,7 +249,9 @@
     if (playlistChanged) idx = 0;
     allItems = (m.items || []).slice();
     manifestName = m.playlist ? m.playlist.name : null;
-    applyRotation(Number(m.rotation) || 0);
+    plRotation = Number(m.rotation) || 0;
+    plMirror = m.mirror ? 1 : 0;
+    applyOrient(statusEl, plRotation, plMirror);   // tela de status usa o padrao da playlist
     recomputeActive(true);
   }
 
@@ -302,6 +318,13 @@
     var item = playlist[idx];
     var dur = (item.duration || 10) * 1000;
     var loop = playlist.length === 1;
+
+    // orientacao do item (NULL = herda da playlist)
+    applyOrient(
+      stage,
+      item.rotation != null ? Number(item.rotation) : plRotation,
+      item.mirror != null ? item.mirror : plMirror
+    );
 
     // preto por cima enquanto o proximo item carrega
     cover.classList.add('on');
