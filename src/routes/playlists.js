@@ -41,15 +41,22 @@ function itemsOf(db, playlistId) {
     });
 }
 
-// POST /api/playlists  { name }
+const ROTATIONS = [0, 90, 180, 270];
+
+// POST /api/playlists  { name, rotation? }
 router.post('/', (req, res) => {
   const name = (req.body && req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'name obrigatorio' });
+  let rotation = 0;
+  if (req.body && req.body.rotation !== undefined) {
+    rotation = Number(req.body.rotation);
+    if (!ROTATIONS.includes(rotation)) return res.status(400).json({ error: 'rotation deve ser 0, 90, 180 ou 270' });
+  }
   const db = getDb();
   try {
     const info = db
-      .prepare('INSERT INTO playlists (company_id, name) VALUES (?, ?)')
-      .run(req.auth.companyId, name);
+      .prepare('INSERT INTO playlists (company_id, name, rotation) VALUES (?, ?, ?)')
+      .run(req.auth.companyId, name, rotation);
     const playlist = db
       .prepare('SELECT * FROM playlists WHERE id = ?')
       .get(Number(info.lastInsertRowid));
@@ -97,17 +104,53 @@ router.get('/:id/manifest', (req, res) => {
   res.json(buildPlaylistManifest(playlist, activeAt));
 });
 
-// PATCH /api/playlists/:id  { name }
+// PATCH /api/playlists/:id  { name?, rotation? }
 router.patch('/:id', (req, res) => {
   const db = getDb();
   const playlist = getPlaylistScoped(db, req.params.id, req.auth.companyId);
   if (!playlist) return res.status(404).json({ error: 'playlist nao encontrada' });
-  const name = (req.body && req.body.name || '').trim();
+
+  const b = req.body || {};
+  const name = (b.name || '').trim();
   if (name) {
     db.prepare(`UPDATE playlists SET name = ?, updated_at = datetime('now') WHERE id = ?`)
       .run(name, playlist.id);
   }
+  if (b.rotation !== undefined) {
+    const rotation = Number(b.rotation);
+    if (!ROTATIONS.includes(rotation)) {
+      return res.status(400).json({ error: 'rotation deve ser 0, 90, 180 ou 270' });
+    }
+    if (rotation !== playlist.rotation) {
+      // rotacao muda a renderizacao -> forca re-sync no player
+      db.prepare(
+        `UPDATE playlists SET rotation = ?, version = version + 1, updated_at = datetime('now') WHERE id = ?`
+      ).run(rotation, playlist.id);
+    }
+  }
   res.json({ playlist: getPlaylistScoped(db, playlist.id, req.auth.companyId) });
+});
+
+// DELETE /api/playlists/:id[?force=true]
+// itens e assignments caem por FK CASCADE. 409 se estiver atribuida a algum alvo.
+router.delete('/:id', (req, res) => {
+  const db = getDb();
+  const playlist = getPlaylistScoped(db, req.params.id, req.auth.companyId);
+  if (!playlist) return res.status(404).json({ error: 'playlist nao encontrada' });
+
+  const targets = db
+    .prepare(`SELECT target_type, target_id FROM assignments WHERE company_id = ? AND playlist_id = ?`)
+    .all(req.auth.companyId, playlist.id);
+  if (targets.length > 0 && req.query.force !== 'true') {
+    return res.status(409).json({
+      error: 'playlist atribuida a device(s)/grupo(s)',
+      targets,
+      hint: 'repita com ?force=true',
+    });
+  }
+
+  db.prepare('DELETE FROM playlists WHERE id = ?').run(playlist.id);
+  res.json({ ok: true, removed_assignments: targets.length });
 });
 
 // POST /api/playlists/:id/items  { asset_id, duration?, ordem?, schedule? }

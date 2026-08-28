@@ -165,3 +165,21 @@ test('SortableJS servido em /vendor/sortablejs/Sortable.min.js', async () => {
   const body = await res.text();
   assert.match(body, /Sortable/);
 });
+
+test('DELETE /api/playlists/:id: 409 se atribuida, ?force apaga tudo', async () => {
+  const pl = (await req('POST', '/api/playlists', { json: { name: 'PL-apagar' } })).body.playlist.id;
+  await req('POST', `/api/playlists/${pl}/items`, { json: { asset_id: assetIds[0] } });
+  const dev = (await req('POST', '/api/pair/new', { auth: false, json: { hardware_id: 'hw-pl-del' } })).body.deviceId;
+  await req('POST', `/api/devices/${dev}/assign`, { json: { playlist_id: pl } });
+
+  const blocked = await req('DELETE', `/api/playlists/${pl}`);
+  assert.equal(blocked.status, 409);
+  assert.ok(blocked.body.targets.some((t) => t.target_type === 'device'));
+
+  const forced = await req('DELETE', `/api/playlists/${pl}?force=true`);
+  assert.equal(forced.status, 200);
+  assert.equal((await req('GET', `/api/playlists/${pl}`)).status, 404);
+  // device volta a ficar sem playlist
+  const d = await req('GET', `/api/devices/${dev}`);
+  assert.equal(d.body.device.effective_playlist, null);
+});

@@ -70,6 +70,7 @@ function buildPlaylistManifest(playlist, activeAt) {
   return {
     playlist: { id: playlist.id, name: playlist.name },
     version: playlist.version,
+    rotation: playlist.rotation || 0,
     generatedAt: new Date().toISOString(),
     items: playlistManifestItems(db, playlist.id, activeAt),
   };
@@ -86,6 +87,7 @@ function buildManifest(device) {
       serial: device.serial,
       playlist: null,
       version: 0,
+      rotation: 0,
       generatedAt: new Date().toISOString(),
       items: [],
     };

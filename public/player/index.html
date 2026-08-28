@@ -6,14 +6,24 @@
 <title>A3K Player</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
-  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #stage {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    transform-origin: top left;
+  }
+  /* rotacao definida na playlist (aplicada por JS: rot90 / rot180 / rot270) */
+  #stage.rot90,  #status.rot90  { width: 100vh; height: 100vw; transform: translateX(100vw) rotate(90deg); transform-origin: top left; }
+  #stage.rot180, #status.rot180 { transform: rotate(180deg); transform-origin: center; }
+  #stage.rot270, #status.rot270 { width: 100vh; height: 100vw; transform: translateY(100vh) rotate(-90deg); transform-origin: top left; }
   #stage img, #stage video {
     max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain;
   }
   #status {
-    position: fixed; inset: 0; display: flex; flex-direction: column;
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 12px;
     color: #cfd8e3; font: 16px/1.4 system-ui, sans-serif; text-align: center; padding: 24px;
+    transform-origin: top left; box-sizing: border-box;
   }
   #status .serial {
     font: 700 34px/1 ui-monospace, Menlo, Consolas, monospace;
@@ -42,6 +52,7 @@
 (function () {
   'use strict';
 
+  var PLAYER_VERSION = '2026-08-28.3';
   var API = location.origin;
   var POLL_MS = 15000;
   var HEARTBEAT_MS = 60000;
@@ -199,6 +210,13 @@
     });
   }
 
+  function applyRotation(deg) {
+    [stage, statusEl].forEach(function (el) {
+      el.classList.remove('rot90', 'rot180', 'rot270');
+      if (deg === 90 || deg === 180 || deg === 270) el.classList.add('rot' + deg);
+    });
+  }
+
   function applyManifest(m) {
     if (!m) return;
     var playlistChanged = currentPlaylistId !== (m.playlist ? m.playlist.id : 0);
@@ -207,6 +225,7 @@
     if (playlistChanged) idx = 0;
     allItems = (m.items || []).slice();
     manifestName = m.playlist ? m.playlist.name : null;
+    applyRotation(Number(m.rotation) || 0);
     recomputeActive(true);
   }
 
@@ -220,7 +239,7 @@
     activeSig = sig;
     playlist = active;
     badge.textContent = device.serial + ' · v' + currentVersion + ' · ' +
-      active.length + '/' + allItems.length + ' no ar';
+      active.length + '/' + allItems.length + ' no ar · p' + PLAYER_VERSION;
 
     if (!allItems.length) {
       idle(manifestName ? 'Playlist "' + manifestName + '" sem itens' : 'Aguardando conteudo');

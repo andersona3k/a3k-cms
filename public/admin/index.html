@@ -100,10 +100,17 @@
       <div><label>Nova playlist</label><input id="plName" placeholder="Vitrine" /></div>
       <button id="plCreateBtn">Criar</button>
       <div><label>Playlist ativa</label><select id="plSelect"></select></div>
+      <div><label>Orientação</label><select id="plRotation">
+        <option value="0">Horizontal</option>
+        <option value="90">Vertical ↻ (90°)</option>
+        <option value="180">Invertido (180°)</option>
+        <option value="270">Vertical ↺ (270°)</option>
+      </select></div>
       <div><label>Asset</label><select id="plAsset"></select></div>
       <div><label>Duracao (s)</label><input id="plDur" type="number" value="10" style="width:80px" /></div>
       <button id="plAddBtn">Adicionar item</button>
       <button class="ghost" id="plPreviewBtn">Preview</button>
+      <button class="danger" id="plDeleteBtn">Apagar playlist</button>
     </div>
     <table id="plItemsTbl"><thead><tr><th style="width:24px"></th><th>#</th><th>Asset</th><th>Tipo</th><th>Duracao (s)</th><th>Horario</th><th></th></tr></thead><tbody id="plItemsBody"></tbody></table>
     <p class="muted" id="plVersion"></p>
@@ -429,7 +436,32 @@
         state.activePlaylist = d.playlist.id; return loadPlaylists(); })
       .catch(function (e) { log('playlist: ' + e.message); });
   };
-  $('plSelect').onchange = function () { state.activePlaylist = Number(this.value); loadPlaylistItems(); };
+  $('plSelect').onchange = function () {
+    state.activePlaylist = Number(this.value);
+    var act = state.playlists.find(function (p) { return p.id === state.activePlaylist; });
+    $('plRotation').value = String(act ? (act.rotation || 0) : 0);
+    loadPlaylistItems();
+  };
+  $('plRotation').onchange = function () {
+    if (!state.activePlaylist) return;
+    var rot = Number(this.value);
+    jpost('/api/playlists/' + state.activePlaylist, { rotation: rot }, 'PATCH')
+      .then(function (d) { log('playlist orientação=' + rot + '° (v' + d.playlist.version + ')');
+        loadPlaylists(); })
+      .catch(function (e) { log('orientação: ' + e.message); });
+  };
+  $('plDeleteBtn').onclick = function () {
+    if (!state.activePlaylist) return;
+    var p = state.playlists.find(function (x) { return x.id === state.activePlaylist; });
+    if (!confirm('Apagar a playlist "' + (p ? p.name : state.activePlaylist) + '"? Itens e atribuições vão junto.')) return;
+    api('/api/playlists/' + state.activePlaylist, { method: 'DELETE' }).then(done).catch(function (e) {
+      if (e.body && e.body.targets) {
+        if (confirm('Está atribuída a ' + e.body.targets.length + ' alvo(s). Apagar mesmo assim?'))
+          api('/api/playlists/' + state.activePlaylist + '?force=true', { method: 'DELETE' }).then(done).catch(function (e2) { log(e2.message); });
+      } else log('apagar playlist: ' + e.message);
+    });
+    function done() { log('playlist apagada'); state.activePlaylist = null; loadPlaylists(); loadDevices(); loadGroups(); }
+  };
   $('plAddBtn').onclick = function () {
     if (!state.activePlaylist) return log('crie/selecione uma playlist');
     jpost('/api/playlists/' + state.activePlaylist + '/items',
@@ -448,6 +480,8 @@
       });
       if (!state.activePlaylist && d.playlists[0]) state.activePlaylist = d.playlists[0].id;
       if (state.activePlaylist) sel.value = state.activePlaylist;
+      var act = d.playlists.find(function (p) { return p.id === state.activePlaylist; });
+      $('plRotation').value = String(act ? (act.rotation || 0) : 0);
       return loadPlaylistItems();
     });
   }
@@ -554,6 +588,11 @@
     api('/api/playlists/' + state.activePlaylist + '/manifest').then(function (m) {
       if (!m.items.length) return log('playlist sem itens');
       pv.items = m.items; pv.idx = 0; pv.playing = true;
+      var st = $('previewStage');
+      var rot = Number(m.rotation) || 0;
+      if (rot === 90 || rot === 270) { st.style.width = '45vw'; st.style.height = '80vh'; }
+      else { st.style.width = '80vw'; st.style.height = '80vh'; }
+      st.style.transform = rot ? 'rotate(' + rot + 'deg)' : '';
       $('previewModal').classList.remove('hidden');
       $('pvPlay').textContent = 'pausar';
       pvRender();
