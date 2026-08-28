@@ -48,11 +48,6 @@
   body.authed { padding-bottom:38px; }
   #loginView { max-width:360px; margin:60px auto; }
   .hidden { display:none !important; }
-  #infoPanel { position:fixed; top:0; right:0; height:100%; width:360px; background:var(--card);
-    border-left:1px solid var(--line); padding:20px; overflow:auto; box-shadow:-8px 0 24px #0006; z-index:20; }
-  #infoPanel dl { display:grid; grid-template-columns:110px 1fr; gap:4px 10px; font-size:13px; margin:12px 0; }
-  #infoPanel dt { color:var(--mut); } #infoPanel dd { margin:0; word-break:break-all; }
-  #infoPanel img, #infoPanel video { max-width:100%; border-radius:8px; border:1px solid var(--line); background:#000; }
   .drag { cursor:grab; color:var(--mut); user-select:none; }
   tr.sortable-ghost { opacity:.4; }
   tr.sortable-chosen { background:#1b2733; }
@@ -123,7 +118,11 @@
   /* ---- Biblioteca em tela cheia: menu de pastas + grade de arquivos ---- */
   body[data-tab="pane-biblioteca"] main,
   body[data-tab="pane-biblioteca"] #tabbar { max-width:none; }
-  #libWrap { display:grid; grid-template-columns:270px 1fr; gap:16px; align-items:start; }
+  #libWrap { display:grid; grid-template-columns:230px minmax(0,1fr) minmax(300px,380px); gap:16px; align-items:start; }
+  @media (max-width:1024px) {
+    #libWrap { grid-template-columns:210px 1fr; }
+    #libPreview { grid-column:1 / -1; }
+  }
   #libTree { border:1px solid var(--line); border-radius:9px; background:#0d141c; padding:10px; position:sticky; top:12px; }
   #libTree .thead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
   #libTree .thead b { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
@@ -148,6 +147,13 @@
   .atile .thumb img { width:100%; height:100%; object-fit:cover; }
   .atile .aname { padding:6px 8px 2px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .atile .abadge { font-size:10px; color:var(--mut); padding:0 8px 7px; display:flex; justify-content:space-between; gap:6px; }
+  .atile.sel { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc); }
+  #libPreview { border:1px solid var(--line); border-radius:9px; background:#0d141c; padding:14px;
+    position:sticky; top:12px; max-height:calc(100vh - 90px); overflow:auto; }
+  #libPreview .pvmedia { width:100%; max-height:300px; object-fit:contain; background:#000; border-radius:8px; border:1px solid var(--line); }
+  #libPreview dl { display:grid; grid-template-columns:96px 1fr; gap:4px 10px; font-size:12px; margin:12px 0; }
+  #libPreview dt { color:var(--mut); } #libPreview dd { margin:0; word-break:break-all; }
+  #libPreview label { margin-top:10px; } #libPreview select, #libPreview input { width:100%; }
 </style>
 </head>
 <body>
@@ -180,19 +186,20 @@
     <div id="libWrap">
       <div id="libTree">
         <div class="thead"><b>Pastas</b>
-          <button class="ghost" id="folderRootBtn" title="nova pasta na raiz">+ pasta</button></div>
+          <button class="ghost" id="folderRootBtn" title="nova pasta (dentro da selecionada)">+ pasta</button></div>
         <ul class="ftree" id="ftreeRoot"></ul>
       </div>
       <div id="libMain">
         <div class="libbar">
           <span id="libCrumb">—</span>
           <span style="flex:1"></span>
-          <input type="file" id="file" multiple />
-          <button id="uploadBtn">Enviar para esta pasta</button>
+          <button id="uploadBtn">+ enviar arquivo</button>
+          <input type="file" id="file" multiple class="hidden" />
         </div>
         <div class="assetgrid" id="assetGrid"></div>
         <p class="muted" id="libEmpty" style="display:none">Pasta vazia. Envie arquivos ou crie subpastas.</p>
       </div>
+      <div id="libPreview"><p class="muted">Clique num arquivo para ver aqui.</p></div>
     </div>
   </div>
 
@@ -295,7 +302,6 @@
   </div>
 </div>
 
-<div id="infoPanel" class="hidden"></div>
 
 <div id="devModal" class="hidden">
   <div class="modalBox">
@@ -347,7 +353,7 @@
   var API = location.origin;
   var token = localStorage.getItem('a3k_admin_token') || '';
   var state = { assets: [], playlists: [], folders: [], groups: [], roles: [], me: null,
-    companyCtx: '', activePlaylist: null, currentFolder: '' };
+    companyCtx: '', activePlaylist: null, currentFolder: '', selectedAsset: null };
 
   var $ = function (id) { return document.getElementById(id); };
   function log(m) { $('log').textContent = '[' + new Date().toLocaleTimeString() + '] ' + m + '\n' + $('log').textContent; }
@@ -517,7 +523,11 @@
     }
     return li;
   }
-  function selectFolder(id) { state.currentFolder = id; renderTree(); loadAssets(); }
+  function selectFolder(id) { state.currentFolder = id; clearPreview(); renderTree(); loadAssets(); }
+  function clearPreview() {
+    state.selectedAsset = null;
+    if ($('libPreview')) $('libPreview').innerHTML = '<p class="muted">Clique num arquivo para ver aqui.</p>';
+  }
   function createFolder(parentId) {
     var name = (prompt(parentId ? 'Nome da subpasta' : 'Nome da nova pasta') || '').trim();
     if (!name) return;
@@ -552,8 +562,20 @@
       loadFolders().then(loadAssets);
     }
   }
-  $('folderRootBtn').onclick = function () { createFolder(null); };
+  // "+ pasta": cria dentro da pasta selecionada (ou na raiz se nada selecionado).
+  // Se a selecionada ja esta no nivel maximo, cria ao lado dela.
+  $('folderRootBtn').onclick = function () {
+    var cur = state.currentFolder ? foldersBy()[state.currentFolder] : null;
+    if (!cur) return createFolder(null);
+    createFolder(folderDepth(cur) >= MAX_DEPTH ? (cur.parent_id || null) : cur.id);
+  };
   function assetGlyph(t) { return t === 'video' ? '🎬' : t === 'audio' ? '🎵' : t === 'image' ? '🖼️' : '📄'; }
+  function thumbHtml(a) {
+    var src = a.type === 'image' ? a.url : (a.thumb_url || null);
+    if (src) return '<img src="' + API + src + '" alt="" loading="lazy" ' +
+      'onerror="this.parentNode.textContent=this.parentNode.dataset.glyph">';
+    return assetGlyph(a.type);
+  }
   function loadFolders() {
     return api('/api/folders').then(function (d) {
       state.folders = d.folders;
@@ -574,20 +596,27 @@
   }
 
   // ---- arquivos ----
-  $('uploadBtn').onclick = function () {
-    var files = Array.prototype.slice.call($('file').files || []);
-    if (!files.length) return log('escolha um ou mais arquivos');
-    $('uploadBtn').disabled = true;
+  // botao "+ enviar arquivo": abre o seletor; ao escolher, ja envia direto.
+  $('uploadBtn').onclick = function () { $('file').click(); };
+  $('file').onchange = function () {
+    var files = Array.prototype.slice.call(this.files || []);
+    this.value = '';
+    if (files.length) doUpload(files);
+  };
+  function doUpload(files) {
+    var btn = $('uploadBtn');
+    btn.disabled = true;
     var idx = 0, okN = 0;
     (function next() {
       if (idx >= files.length) {
-        $('file').value = '';
-        $('uploadBtn').disabled = false;
+        btn.disabled = false;
+        btn.textContent = '+ enviar arquivo';
         log('upload: ' + okN + '/' + files.length + ' ok');
         loadFolders().then(loadAssets);
         return;
       }
       var f = files[idx++];
+      btn.textContent = 'enviando ' + idx + '/' + files.length + '...';
       var fd = new FormData(); fd.append('file', f);
       if (state.currentFolder) fd.append('folder_id', state.currentFolder);
       var big = f.type.indexOf('video') === 0;
@@ -601,7 +630,7 @@
         .catch(function (e) { log('  ' + f.name + ': ' + e.message); })
         .finally(next);
     })();
-  };
+  }
 
   function resOf(a) { return (a.width && a.height) ? a.width + '×' + a.height : '—'; }
   function durOf(a) { return a.duration != null ? Number(a.duration).toFixed(2) + 's' : '—'; }
@@ -625,12 +654,11 @@
       var fid = state.currentFolder === '' ? null : Number(state.currentFolder);
       var here = d.assets.filter(function (a) { return (a.folder_id || null) === fid; });
       here.forEach(function (a) {
-        var tile = document.createElement('div'); tile.className = 'atile';
-        var thumb = a.type === 'image'
-          ? '<img src="' + API + a.url + '" alt="" loading="lazy" onerror="this.parentNode.textContent=String.fromCodePoint(0x1F5BC)">'
-          : assetGlyph(a.type);
+        var tile = document.createElement('div');
+        tile.className = 'atile' + (String(state.selectedAsset) === String(a.id) ? ' sel' : '');
+        tile.dataset.id = a.id;
         tile.innerHTML =
-          '<div class="thumb">' + thumb + '</div>' +
+          '<div class="thumb" data-glyph="' + assetGlyph(a.type) + '">' + thumbHtml(a) + '</div>' +
           '<div class="aname" title="' + esc(a.filename) + '">' + esc(a.filename) + '</div>' +
           '<div class="abadge"><span>' + esc(a.type) + (a.width ? ' - ' + resOf(a) : '') + '</span>' +
           '<span>' + fmtBytes(a.size_bytes) + '</span></div>';
@@ -641,43 +669,51 @@
     });
   }
 
-  // ---- painel de info ----
+  // ---- visualizador (coluna fixa dentro da Biblioteca) ----
   function openInfo(id) {
+    state.selectedAsset = id;
+    var grid = $('assetGrid');
+    if (grid) {
+      var tiles = grid.querySelectorAll('.atile');
+      for (var i = 0; i < tiles.length; i++) {
+        tiles[i].classList.toggle('sel', String(tiles[i].dataset.id) === String(id));
+      }
+    }
     api('/api/assets/' + id).then(function (d) {
       var a = d.asset;
-      var p = $('infoPanel'); p.classList.remove('hidden');
-      var preview = '';
-      if (a.type === 'image') preview = '<img src="' + API + a.url + '" />';
-      else if (a.type === 'video') preview = '<video src="' + API + a.url + '" controls muted></video>';
-      var folderName = '—';
-      state.folders.forEach(function (f) { if (f.id === a.folder_id) folderName = f.name; });
-      var folderOpts = '<option value="">— sem pasta</option>' + state.folders.map(function (f) {
-        return '<option value="' + f.id + '"' + (f.id === a.folder_id ? ' selected' : '') + '>' + esc(f.name) + '</option>';
+      var p = $('libPreview');
+      var media = a.type === 'image'
+        ? '<img class="pvmedia" src="' + API + a.url + '" />'
+        : a.type === 'video'
+          ? '<video class="pvmedia" src="' + API + a.url + '" controls muted ' +
+            (a.thumb_url ? 'poster="' + API + a.thumb_url + '"' : '') + '></video>'
+          : '<div class="pvmedia" style="display:flex;align-items:center;justify-content:center;font-size:44px;height:160px">' + assetGlyph(a.type) + '</div>';
+      var folderOpts = '<option value="">escolher dentro</option>' + state.folders.map(function (f) {
+        return '<option value="' + f.id + '"' + (f.id === a.folder_id ? ' selected' : '') + '>' + esc(folderPath(f.id)) + '</option>';
       }).join('');
       p.innerHTML =
-        '<div class="row" style="justify-content:space-between"><b>Asset #' + a.id + '</b>' +
-        '<button class="ghost" id="infoClose">fechar</button></div>' + preview +
+        '<div class="row" style="justify-content:space-between"><b>#' + a.id + ' ' + esc(a.filename) + '</b>' +
+        '<button class="ghost" id="infoClose">fechar</button></div>' + media +
         '<dl>' +
-        row('Arquivo', esc(a.filename)) + row('Tipo', a.type) + row('MIME', a.mime || '—') +
-        row('Formato', a.format || '—') + row('Resolucao', resOf(a)) + row('Duracao', durOf(a)) +
-        row('FPS', a.fps != null ? a.fps : '—') + row('Bitrate', a.bitrate != null ? fmtBits(a.bitrate) : '—') +
-        row('Codec', a.codec || '—') + row('Tamanho', fmtBytes(a.size_bytes)) +
-        row('Hash', '<span class="muted">' + (a.hash || '').slice(0, 16) + '…</span>') +
+        row('Tipo', a.type) + row('Formato', a.format || '—') + row('Resolucao', resOf(a)) +
+        row('Duracao', durOf(a)) + row('FPS', a.fps != null ? a.fps : '—') +
+        row('Bitrate', a.bitrate != null ? fmtBits(a.bitrate) : '—') + row('Codec', a.codec || '—') +
+        row('Tamanho', fmtBytes(a.size_bytes)) +
         row('Probe', '<span class="pill ' + a.probe_status + '">' + a.probe_status + '</span>' +
           (a.probe_error ? ' <span class="muted">' + esc(a.probe_error) + '</span>' : '')) +
         '</dl>' +
-        '<label>Pasta</label><select id="infoFolder">' + folderOpts + '</select>' +
-        '<label>Renomear</label><input id="infoName" value="' + esc(a.filename) + '" />' +
+        '<label>mudar pasta</label><select id="infoFolder">' + folderOpts + '</select>' +
+        '<label>renomear</label><input id="infoName" value="' + esc(a.filename) + '" />' +
         '<div class="row" style="margin-top:12px">' +
         '<button id="infoSave">Salvar</button>' +
         '<button class="ghost" id="infoReprobe">Reprocessar / converter</button>' +
-        '<button class="danger" id="infoDelete">Apagar asset</button></div>';
-      $('infoClose').onclick = function () { p.classList.add('hidden'); };
+        '<button class="danger" id="infoDelete">remover asset</button></div>';
+      $('infoClose').onclick = clearPreview;
       $('infoSave').onclick = function () {
         jpost('/api/assets/' + a.id, {
           folder_id: $('infoFolder').value ? Number($('infoFolder').value) : null,
           filename: $('infoName').value,
-        }, 'PATCH').then(function () { log('asset #' + a.id + ' atualizado'); p.classList.add('hidden');
+        }, 'PATCH').then(function () { log('asset #' + a.id + ' atualizado');
           loadFolders().then(loadAssets); }).catch(function (e) { log(e.message); });
       };
       $('infoReprobe').onclick = function () {
@@ -688,11 +724,11 @@
       $('infoDelete').onclick = function () {
         api('/api/assets/' + a.id, { method: 'DELETE' }).then(done).catch(function (e) {
           if (e.body && e.body.playlists) {
-            if (confirm('Asset em uso nas playlists ' + e.body.playlists.join(', ') + '. Apagar mesmo assim?'))
+            if (confirm('Asset em uso nas playlists ' + e.body.playlists.join(', ') + '. Remover mesmo assim?'))
               api('/api/assets/' + a.id + '?force=true', { method: 'DELETE' }).then(done).catch(function (e2) { log(e2.message); });
-          } else log('apagar: ' + e.message);
+          } else log('remover: ' + e.message);
         });
-        function done() { log('asset #' + a.id + ' apagado'); p.classList.add('hidden');
+        function done() { log('asset #' + a.id + ' removido'); clearPreview();
           loadFolders().then(loadAssets).then(loadPlaylists); }
       };
     }).catch(function (e) { log(e.message); });

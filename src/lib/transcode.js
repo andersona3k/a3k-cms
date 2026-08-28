@@ -55,6 +55,26 @@ function needsNormalize(rawProbe) {
   return { normalize: false, reason: 'ja conforme' };
 }
 
+// Extrai 1 frame de srcAbs -> outAbs (jpg), p/ miniatura. Lanca em falha.
+// Tenta ~1s; se o video for mais curto, cai no frame 0.
+async function extractPoster(srcAbs, outAbs) {
+  const base = [
+    '-y', '-hide_banner', '-loglevel', 'error',
+    '-i', srcAbs,
+    '-frames:v', '1',
+    '-vf', "scale='min(480,iw)':-2",
+    '-q:v', '3',
+    outAbs,
+  ];
+  try {
+    await execFileAsync(ffmpegPath(), ['-ss', '1', ...base], { timeout: 60 * 1000, maxBuffer: 8 * 1024 * 1024 });
+  } catch {
+    await execFileAsync(ffmpegPath(), ['-ss', '0', ...base], { timeout: 60 * 1000, maxBuffer: 8 * 1024 * 1024 });
+  }
+  const st = fs.statSync(outAbs);
+  if (!st.size) throw new Error('poster vazio');
+}
+
 // Transcodifica srcAbs -> outAbs (mp4). Lanca em falha.
 async function normalizeVideo(srcAbs, outAbs) {
   const args = [
@@ -75,4 +95,4 @@ async function normalizeVideo(srcAbs, outAbs) {
   if (!st.size) throw new Error('saida vazia');
 }
 
-module.exports = { needsNormalize, normalizeVideo, rotationOf, ffmpegPath: ffmpegPath() };
+module.exports = { needsNormalize, normalizeVideo, extractPoster, rotationOf, ffmpegPath: ffmpegPath() };

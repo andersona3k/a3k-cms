@@ -270,16 +270,19 @@ public/
                        alvo x versao no player, mover de grupo + playlist propria
                        com "Salvar", e as ultimas 5 mudancas (activity_log) com
                        o e-mail de quem fez. "+ Grupo" / "+ Dispositivo" na toolbar.
-                       Aba Biblioteca = tela cheia: menu de pastas em arvore a
-                       esquerda (pasta "Geral" garantida na raiz; subpastas ate 3
-                       niveis) + grade de arquivos em icone/miniatura a direita
-                       (clique abre o painel de info). Upload multiplo p/ a pasta
-                       selecionada.
+                       Aba Biblioteca = tela cheia, 3 colunas: menu de pastas em
+                       arvore ("Geral" garantida na raiz; subpastas ate 3 niveis;
+                       "+ pasta" cria DENTRO da selecionada) | grade de arquivos
+                       (miniatura real p/ imagem E video via thumb_url, glifo p/
+                       audio) | visualizador fixo #libPreview (media + formato/
+                       tamanho/etc + "mudar pasta"/"renomear"/"remover asset").
+                       Botao "+ enviar arquivo" abre o seletor e ja envia
+                       (multiplo, fila) p/ a pasta ativa.
 node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m10.test.js  testes de aceite (121 no total)
+  m0..m11.test.js  testes de aceite (123 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -291,7 +294,9 @@ por plataforma. Sem toolchain nativo. `FFPROBE_PATH` no `.env` sobrescreve.
 `folders`, `assets` — biblioteca (colunas de metadados nullable ate o M2).
 `playlists` (com `version`), `playlist_items` (com `schedule` JSON de day-parting, M6).
 `assets` ganhou `format`, `metadata` (dump cru do probe), `probe_status`
-(`pending`/`ok`/`error`/`skipped`) e `probe_error` no M2.
+(`pending`/`ok`/`error`/`skipped`) e `probe_error` no M2; `thumb_url` (migration
+009) = poster de video (`ffmpeg` extrai 1 frame no probe -> `media/<hash>.thumb.jpg`,
+servido em `/assets/`).
 `device_groups`, `devices` (`serial` unico, `player_type`, `capabilities` JSON,
 `hardware_id`/`token`/`last_version` do pareamento; `last_version_at` = quando o
 heartbeat confirmou uma versao nova, migration 008).

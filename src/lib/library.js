@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const config = require('../config');
 const { probeAsset } = require('./probe');
-const { needsNormalize, normalizeVideo } = require('./transcode');
+const { needsNormalize, normalizeVideo, extractPoster } = require('./transcode');
 
 // url gravada e sempre "/assets/<storedName>"
 function storedNameOf(url) {
@@ -88,6 +88,21 @@ async function applyProbeToAsset(db, asset) {
     }
   }
 
+  // miniatura de video: 1 frame -> media/<hash>.thumb.jpg (servido em /assets/...)
+  if (asset.type === 'video' && result.status === 'ok') {
+    try {
+      const thumbName = `${asset.hash}.thumb.jpg`;
+      const thumbAbs = path.join(config.mediaDir, thumbName);
+      await extractPoster(absPathOf(asset.url), thumbAbs);
+      if (fs.existsSync(thumbAbs) && fs.statSync(thumbAbs).size > 0) {
+        db.prepare(`UPDATE assets SET thumb_url = ? WHERE id = ?`).run(`/assets/${thumbName}`, asset.id);
+      }
+    } catch (err) {
+      // miniatura e opcional; segue sem ela
+      console.warn('[library] poster falhou p/ asset', asset.id, String(err.message || err).slice(0, 160));
+    }
+  }
+
   writeProbeFields(db, asset.id, result);
   return db.prepare('SELECT * FROM assets WHERE id = ?').get(asset.id);
 }
@@ -101,6 +116,8 @@ function deleteAssetFileIfOrphan(db, asset) {
   if (others > 0) return;
   const abs = absPathOf(asset.url);
   if (fs.existsSync(abs)) fs.rmSync(abs);
+  const thumbAbs = path.join(config.mediaDir, `${asset.hash}.thumb.jpg`);
+  if (fs.existsSync(thumbAbs)) fs.rmSync(thumbAbs);
 }
 
 module.exports = { storedNameOf, absPathOf, applyProbeToAsset, deleteAssetFileIfOrphan };
