@@ -168,11 +168,21 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // reaplica a orientacao a cada retomada: mudar no Setup e voltar ja vale
+        // (a Activity e singleTask e nem sempre passa pelo onCreate de novo).
+        val want = Prefs.requestedOrientation(this)
+        if (requestedOrientation != want) requestedOrientation = want
         Watchdog.arm(this)
         Watchdog.beat()
         ui.removeCallbacks(beat)
         ui.post(beat)
         webView?.onResume()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        requestedOrientation = Prefs.requestedOrientation(this)
+        webView?.loadUrl(Prefs.playerUrl(this))
     }
 
     override fun onPause() {
