@@ -14,6 +14,9 @@ const playlistsRoutes = require('./routes/playlists');
 const devicesRoutes = require('./routes/devices');
 const deviceGroupsRoutes = require('./routes/deviceGroups');
 const pairingRoutes = require('./routes/pairing');
+const companiesRoutes = require('./routes/companies');
+const rolesRoutes = require('./routes/roles');
+const usersRoutes = require('./routes/users');
 const playerRoutes = require('./routes/player');
 
 function createApp() {
@@ -23,7 +26,7 @@ function createApp() {
 
   // Health — sem auth.
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M4' });
+    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M5' });
   });
 
   // Auth.
@@ -48,6 +51,11 @@ function createApp() {
   app.use('/api/playlists', playlistsRoutes);
   app.use('/api/device-groups', deviceGroupsRoutes);
   app.use('/api/devices', devicesRoutes);
+
+  // M5 — multiempresa + permissoes.
+  app.use('/api/companies', companiesRoutes);
+  app.use('/api/roles', rolesRoutes);
+  app.use('/api/users', usersRoutes);
 
   // Download de midia.
   app.use(

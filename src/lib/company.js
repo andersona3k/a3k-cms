@@ -2,13 +2,17 @@
 
 const { getDb } = require('../db');
 
-// M1 e single-company. Endpoints de player (sem JWT) usam a empresa padrao =
-// a primeira empresa cadastrada (a do seed). No M5 isso e resolvido pelo
-// pareamento/claim explicito.
+function companyCount() {
+  return getDb().prepare('SELECT COUNT(*) AS n FROM companies').get().n;
+}
+
+// Empresa alvo de um pareamento SEM codigo. So faz sentido com uma unica
+// empresa; com multiempresa o pareamento sem codigo e recusado (o codigo do
+// fluxo "Add player" carrega a empresa).
 function defaultCompanyId() {
   const row = getDb().prepare('SELECT id FROM companies ORDER BY id LIMIT 1').get();
   if (!row) throw new Error('nenhuma empresa cadastrada — rode o seed');
   return row.id;
 }
 
-module.exports = { defaultCompanyId };
+module.exports = { defaultCompanyId, companyCount };

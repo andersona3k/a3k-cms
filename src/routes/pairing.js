@@ -7,12 +7,12 @@
 
 const express = require('express');
 const { getDb } = require('../db');
-const { requireAuth } = require('../auth/middleware');
+const { requireAuth, writeGuard } = require('../auth/middleware');
 const { newPairCode } = require('../lib/ids');
 const { getAdapter, PLAYER_TYPES } = require('../adapters');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, writeGuard('pairing:manage'));
 
 const TTL_MINUTES = 30;
 

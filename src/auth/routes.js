@@ -18,7 +18,7 @@ router.post('/login', (req, res) => {
   const db = getDb();
   const user = db
     .prepare(
-      `SELECT id, company_id, role_id, email, password_hash, name, active
+      `SELECT id, company_id, role_id, email, password_hash, name, active, is_superadmin
          FROM users WHERE email = ?`
     )
     .get(String(email).toLowerCase());
@@ -38,6 +38,7 @@ router.post('/login', (req, res) => {
       name: user.name,
       company_id: user.company_id,
       role_id: user.role_id,
+      is_superadmin: !!user.is_superadmin,
     },
   });
 });

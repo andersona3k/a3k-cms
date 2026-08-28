@@ -78,9 +78,30 @@ Sem metadados (ffprobe/sharp fica no M2), sem drag-drop (M3), sem grupos (M4).
 - `/admin/`: card de grupos + "Add player" (modal com codigo, provisionamento
   e poll ate parear); coluna de grupo e de playlist efetiva por device.
 
+### M5 — Multiempresa + permissoes (concluido)
+
+- **Isolamento**: toda query ja era escopada por `req.auth.companyId`; agora
+  cruzar empresa devolve `404`. Empresa origem do usuario ganha um `homeCompanyId`.
+- **Superadmin** (`users.is_superadmin`, migration 005): opera acima das
+  empresas. Gere empresas via `/api/companies` (CRUD, cria a empresa + role
+  `admin` + admin user). Pode atuar dentro de outra empresa mandando o header
+  `X-Company-Id` (ou `?company_id`).
+- **Permissoes**: `roles.permissions` = JSON `{ "*": true }` ou chaves do
+  vocabulario (`src/lib/permissions.js`): `assets:write`, `folders:write`,
+  `playlists:write`, `devices:write`, `groups:write`, `pairing:manage`,
+  `users:manage`, `roles:manage`. `writeGuard(perm)` protege **toda mutacao**
+  dos routers admin; GET so exige estar autenticado. Superadmin e `*` passam.
+- **Papeis / usuarios**: `/api/roles` (perm `roles:manage`) e `/api/users`
+  (perm `users:manage`), escopados a empresa em contexto. Nao da p/ desativar
+  a si mesmo; nao apaga role em uso.
+- **Pareamento multiempresa**: `POST /api/pair/new` sem `code` e recusado
+  quando ha >1 empresa (o codigo carrega a empresa alvo).
+- `/admin/`: card "5 · Administracao" (Empresas [superadmin], Papeis com
+  checkboxes de permissao, Usuarios) + seletor de empresa no cabecalho.
+
 ### Proximos
 
-M5 multiempresa + permissoes (enforcement), M6 day-parting, Fase 3 apps nativos.
+M6 day-parting, Fase 3 apps nativos.
 
 ## Setup
 
@@ -92,16 +113,23 @@ npm run seed              # cria empresa A3K + role admin + usuario admin
 npm start                 # sobe em http://localhost:3000
 ```
 
-`npm run reset` apaga o banco. `npm test` roda os testes de aceite (M0..M4).
+`npm run reset` apaga o banco. `npm test` roda os testes de aceite (M0..M5).
+
+O `seed` cria o admin como **superadmin**. Usuarios comuns entram por `/api/users`
+(criados por quem tem `users:manage`) e recebem um `role_id`.
 
 ## API
 
 ### Admin (Bearer JWT do login)
 
+Toda mutacao (`POST`/`PATCH`/`PUT`/`DELETE`) exige a permissao do recurso
+(`assets:write`, `playlists:write`, ...); `GET` so exige estar autenticado.
+Superadmin manda `X-Company-Id` p/ atuar em outra empresa.
+
 | Metodo | Rota | Descricao |
 |--------|------|-----------|
 | POST | `/api/auth/login` | `{email,password}` -> `{token,user}` |
-| GET  | `/api/auth/me` | usuario + permissoes |
+| GET  | `/api/auth/me` | usuario + permissoes + `isSuperadmin` |
 | GET  | `/api/adapters` | stubs de provisionamento/capacidades por player_type |
 | POST | `/api/assets` | multipart `file` (+ `folder_id` opc.) -> asset com metadados extraidos |
 | GET  | `/api/assets[?folder_id=N\|unfiled]` · `/api/assets/:id` | lista / painel de info |
@@ -130,6 +158,9 @@ npm start                 # sobe em http://localhost:3000
 | POST | `/api/pair/requests` | `{name?,group_id?,player_type?}` -> `{request:{code},provisioning}` |
 | GET  | `/api/pair/requests[/:id]` | lista / poll (mostra o device quando consumido) |
 | DELETE | `/api/pair/requests/:id` | cancela o codigo |
+| GET · POST · PATCH | `/api/companies[/:id]` | **superadmin** — gestao de empresas |
+| GET · POST · PATCH · DELETE | `/api/roles[/:id]` | perm `roles:manage` — `{name,permissions}` |
+| GET · POST · PATCH | `/api/users[/:id]` · POST `/:id/password` | perm `users:manage` |
 
 ### Player (sem JWT — `pair` aberto; manifest/heartbeat via token do device)
 
@@ -165,33 +196,32 @@ src/
   db/
     index.js           conexao node:sqlite (WAL, FKs on)
     migrate.js         runner de migrations
-    migrations/        001_init · 002_m1_pairing · 003_m2_library · 004_m4_devices
-  auth/                password (scrypt) · jwt · middleware · routes
+    migrations/        001_init · 002_pairing · 003_library · 004_devices · 005_multitenant
+  auth/                password (scrypt) · jwt · middleware (writeGuard, superadmin) · routes
   adapters/            base + tizen/webos/android/windows (stubs) + registry
   lib/
     ids.js             gerador de serial + token + codigo de pareamento
-    company.js         empresa padrao (M1 single-company)
+    company.js         empresa alvo de pair sem codigo + companyCount()
+    permissions.js     vocabulario de permissoes + validacao + `grants()`
     media.js           storage do multer, hash sha256, dedup
     manifest.js        manifest de device + manifest de playlist (preview)
     probe.js           sharp (imagem) + ffprobe (video/audio), normalizacao
     library.js         aplica probe no asset, apaga arquivo orfao
   routes/
-    assets.js          upload+probe / filtro por pasta / mover / reprobe / delete
-    folders.js         CRUD de pastas + move com anti-ciclo + delete guard
-    playlists.js       CRUD + itens + reordenar + patch item + manifest (preview)
-    devices.js         listagem (+ playlist efetiva) / patch / assign (admin)
-    deviceGroups.js    CRUD de grupos + mover devices + assign playlist->grupo
-    pairing.js         Add player: solicitacoes de pareamento (codigo + provisionamento)
-    player.js          pair/new (com codigo), manifest (?v & ?p), heartbeat
+    assets.js · folders.js · playlists.js · devices.js · deviceGroups.js
+    pairing.js          Add player (codigo + provisionamento)
+    companies.js        gestao de empresas (superadmin)
+    roles.js · users.js CRUD de papeis e usuarios por empresa
+    player.js           pair/new (com codigo), manifest (?v & ?p), heartbeat
 public/
   player/index.html    player kiosk (vanilla) — segue ?p= p/ detectar troca de playlist
-  admin/index.html     painel: biblioteca+pastas, playlist (drag-drop+preview),
-                       grupos, dispositivos, Add player
+  admin/index.html     painel: biblioteca, playlist (drag-drop+preview), grupos,
+                       dispositivos, Add player, administracao (empresas/papeis/usuarios)
 node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0.test.js · m1.test.js · m2.test.js · m3.test.js · m4.test.js   testes de aceite
+  m0..m5.test.js   testes de aceite (81 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -199,7 +229,7 @@ por plataforma. Sem toolchain nativo. `FFPROBE_PATH` no `.env` sobrescreve.
 
 ## Modelo de dados
 
-`companies`, `roles`, `users` — configuracao e permissoes.
+`companies`, `roles` (`permissions` JSON), `users` (`is_superadmin` no M5).
 `folders`, `assets` — biblioteca (colunas de metadados nullable ate o M2).
 `playlists` (com `version`), `playlist_items` (com `schedule` reservado p/ M6).
 `assets` ganhou `format`, `metadata` (dump cru do probe), `probe_status`

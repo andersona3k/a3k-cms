@@ -2,11 +2,12 @@
 
 const express = require('express');
 const { getDb } = require('../db');
-const { requireAuth } = require('../auth/middleware');
+const { requireAuth, writeGuard } = require('../auth/middleware');
 const { upload, assetTypeFromMime, finalizeUpload } = require('../lib/media');
 const { applyProbeToAsset, deleteAssetFileIfOrphan } = require('../lib/library');
 
 const router = express.Router();
+router.use(requireAuth, writeGuard('assets:write'));
 
 function scoped(db, id, companyId) {
   return db
@@ -16,7 +17,7 @@ function scoped(db, id, companyId) {
 
 // POST /api/assets  (multipart: "file", opcional "folder_id")
 // M2: extrai metadados no upload (sharp p/ imagem, ffprobe p/ video/audio).
-router.post('/', requireAuth, upload.single('file'), async (req, res, next) => {
+router.post('/', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'campo "file" ausente' });
 
@@ -66,7 +67,7 @@ router.post('/', requireAuth, upload.single('file'), async (req, res, next) => {
 });
 
 // GET /api/assets[?folder_id=N|unfiled]
-router.get('/', requireAuth, (req, res) => {
+router.get('/', (req, res) => {
   const db = getDb();
   const { folder_id: folderId } = req.query;
   let rows;
@@ -87,14 +88,14 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 // GET /api/assets/:id  (painel de info)
-router.get('/:id', requireAuth, (req, res) => {
+router.get('/:id', (req, res) => {
   const asset = scoped(getDb(), req.params.id, req.auth.companyId);
   if (!asset) return res.status(404).json({ error: 'asset nao encontrado' });
   res.json({ asset });
 });
 
 // PATCH /api/assets/:id  { folder_id?, filename? }   (mover / renomear)
-router.patch('/:id', requireAuth, (req, res) => {
+router.patch('/:id', (req, res) => {
   const db = getDb();
   const asset = scoped(db, req.params.id, req.auth.companyId);
   if (!asset) return res.status(404).json({ error: 'asset nao encontrado' });
@@ -127,7 +128,7 @@ router.patch('/:id', requireAuth, (req, res) => {
 });
 
 // POST /api/assets/:id/reprobe   (re-extrai metadados)
-router.post('/:id/reprobe', requireAuth, async (req, res, next) => {
+router.post('/:id/reprobe', async (req, res, next) => {
   try {
     const db = getDb();
     const asset = scoped(db, req.params.id, req.auth.companyId);
@@ -140,7 +141,7 @@ router.post('/:id/reprobe', requireAuth, async (req, res, next) => {
 });
 
 // DELETE /api/assets/:id
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', (req, res) => {
   const db = getDb();
   const asset = scoped(db, req.params.id, req.auth.companyId);
   if (!asset) return res.status(404).json({ error: 'asset nao encontrado' });

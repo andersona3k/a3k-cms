@@ -47,11 +47,12 @@ function seed() {
       .get(company.id, adminEmail);
     if (!existingUser) {
       db.prepare(
-        `INSERT INTO users (company_id, role_id, email, password_hash, name, active)
-         VALUES (?, ?, ?, ?, 'Administrador', 1)`
+        `INSERT INTO users (company_id, role_id, email, password_hash, name, active, is_superadmin)
+         VALUES (?, ?, ?, ?, 'Administrador', 1, 1)`
       ).run(company.id, role.id, adminEmail, hashPassword(adminPassword));
-      console.log(`[seed] admin criado: ${adminEmail} / senha: ${adminPassword}`);
+      console.log(`[seed] admin (superadmin) criado: ${adminEmail} / senha: ${adminPassword}`);
     } else {
+      db.prepare('UPDATE users SET is_superadmin = 1 WHERE id = ?').run(existingUser.id);
       console.log(`[seed] admin ja existe: ${adminEmail}`);
     }
 

@@ -2,10 +2,10 @@
 
 const express = require('express');
 const { getDb } = require('../db');
-const { requireAuth } = require('../auth/middleware');
+const { requireAuth, writeGuard } = require('../auth/middleware');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, writeGuard('folders:write'));
 
 function scoped(db, id, companyId) {
   return db

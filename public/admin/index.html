@@ -59,6 +59,7 @@
 <body>
 <header>
   <b>A3K CMS</b><span class="muted">painel admin</span>
+  <select id="companyCtx" class="hidden" title="empresa em contexto (superadmin)"></select>
   <span style="flex:1"></span>
   <span id="who" class="muted"></span>
   <button class="ghost" id="logoutBtn">sair</button>
@@ -129,6 +130,39 @@
     </tr></thead><tbody></tbody></table>
   </div>
 
+  <div class="card hidden" id="adminCard">
+    <h2>5 · Administracao</h2>
+
+    <div id="companiesBlock" class="hidden">
+      <h3 style="color:var(--mut);font-size:13px;margin:4px 0">Empresas</h3>
+      <table id="compTbl"><thead><tr><th>ID</th><th>Nome</th><th>Usuarios</th><th>Devices</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="row" style="margin-top:8px">
+        <div><label>Nova empresa</label><input id="compName" placeholder="Cliente XPTO" /></div>
+        <div><label>Admin e-mail (opc.)</label><input id="compAdminEmail" /></div>
+        <div><label>Admin senha (opc.)</label><input id="compAdminPass" type="password" /></div>
+        <button id="compCreateBtn">Criar empresa</button>
+      </div>
+    </div>
+
+    <h3 style="color:var(--mut);font-size:13px;margin:16px 0 4px">Papeis</h3>
+    <table id="roleTbl"><thead><tr><th>Nome</th><th>Permissoes</th><th>Usuarios</th><th></th></tr></thead><tbody></tbody></table>
+    <div class="row" style="margin-top:8px;align-items:start">
+      <div><label>Novo papel</label><input id="roleName" placeholder="operador" /></div>
+      <div><label>Permissoes</label><div id="permBoxes" style="display:flex;flex-wrap:wrap;gap:10px;max-width:520px"></div></div>
+      <button id="roleCreateBtn">Criar papel</button>
+    </div>
+
+    <h3 style="color:var(--mut);font-size:13px;margin:16px 0 4px">Usuarios</h3>
+    <table id="userTbl"><thead><tr><th>ID</th><th>E-mail</th><th>Nome</th><th>Papel</th><th>Ativo</th><th></th></tr></thead><tbody></tbody></table>
+    <div class="row" style="margin-top:8px">
+      <div><label>E-mail</label><input id="userEmail" /></div>
+      <div><label>Senha</label><input id="userPass" type="password" /></div>
+      <div><label>Nome</label><input id="userName" /></div>
+      <div><label>Papel</label><select id="userRole"></select></div>
+      <button id="userCreateBtn">Criar usuario</button>
+    </div>
+  </div>
+
   <div class="card"><h2>Log</h2><div id="log"></div></div>
 </main>
 
@@ -170,14 +204,18 @@
   'use strict';
   var API = location.origin;
   var token = localStorage.getItem('a3k_admin_token') || '';
-  var state = { assets: [], playlists: [], folders: [], groups: [], activePlaylist: null, currentFolder: '' };
+  var state = { assets: [], playlists: [], folders: [], groups: [], roles: [], me: null,
+    companyCtx: '', activePlaylist: null, currentFolder: '' };
 
   var $ = function (id) { return document.getElementById(id); };
   function log(m) { $('log').textContent = '[' + new Date().toLocaleTimeString() + '] ' + m + '\n' + $('log').textContent; }
 
   function api(path, opts) {
     opts = opts || {};
-    opts.headers = Object.assign({}, opts.headers || {}, token ? { authorization: 'Bearer ' + token } : {});
+    var extra = {};
+    if (token) extra.authorization = 'Bearer ' + token;
+    if (state.companyCtx) extra['x-company-id'] = String(state.companyCtx);
+    opts.headers = Object.assign({}, opts.headers || {}, extra);
     return fetch(API + path, opts).then(function (r) {
       return r.text().then(function (t) {
         var body = t ? JSON.parse(t) : {};
@@ -610,10 +648,157 @@
     }).catch(function (e) { log('add player: ' + e.message); });
   };
 
-  function refreshAll() {
-    loadFolders().then(loadAssets).then(loadPlaylists).then(loadGroups).then(loadDevices).catch(function (e) {
-      if (/HTTP 401|token/.test(e.message)) showApp(false); else log(e.message);
+  // ---- M5: administracao ----
+  function can(perm) {
+    var p = (state.me && state.me.permissions) || {};
+    return !!(state.me && state.me.isSuperadmin) || p['*'] === true || p[perm] === true;
+  }
+  function loadMe() {
+    return api('/api/auth/me').then(function (d) {
+      state.me = d.user;
+      $('who').textContent = d.user.email + (d.user.isSuperadmin ? ' · superadmin' : '') +
+        (state.companyCtx ? ' · empresa ' + state.companyCtx : '');
+      $('companiesBlock').classList.toggle('hidden', !d.user.isSuperadmin);
+      $('companyCtx').classList.toggle('hidden', !d.user.isSuperadmin);
+      $('adminCard').classList.toggle('hidden', !(can('roles:manage') || can('users:manage')));
     });
+  }
+  $('companyCtx').onchange = function () {
+    state.companyCtx = this.value;
+    localStorage.setItem('a3k_company_ctx', state.companyCtx);
+    log('contexto: empresa ' + (this.value || '(propria)'));
+    refreshAll();
+  };
+  function loadCompanies() {
+    if (!state.me || !state.me.isSuperadmin) return Promise.resolve();
+    return api('/api/companies').then(function (d) {
+      var tb = $('compTbl').querySelector('tbody'); tb.innerHTML = '';
+      var ctx = $('companyCtx'); ctx.innerHTML = '<option value="">— minha empresa</option>';
+      d.companies.forEach(function (c) {
+        tb.insertAdjacentHTML('beforeend', '<tr><td>' + c.id + '</td><td>' + esc(c.name) +
+          '</td><td>' + c.user_count + '</td><td>' + c.device_count + '</td><td></td></tr>');
+        var o = document.createElement('option'); o.value = c.id; o.textContent = '#' + c.id + ' ' + c.name;
+        ctx.appendChild(o);
+      });
+      ctx.value = state.companyCtx || '';
+    });
+  }
+  $('compCreateBtn').onclick = function () {
+    var body = { name: $('compName').value.trim() };
+    if (!body.name) return;
+    if ($('compAdminEmail').value && $('compAdminPass').value) {
+      body.admin = { email: $('compAdminEmail').value.trim(), password: $('compAdminPass').value };
+    }
+    jpost('/api/companies', body).then(function (d) {
+      log('empresa #' + d.company.id + ' criada' + (d.admin_user ? ' (admin ' + d.admin_user.email + ')' : ''));
+      $('compName').value = $('compAdminEmail').value = $('compAdminPass').value = '';
+      loadCompanies();
+    }).catch(function (e) { log('empresa: ' + e.message); });
+  };
+
+  function permSummary(p) {
+    if (p['*']) return '<b>tudo (*)</b>';
+    var k = Object.keys(p); return k.length ? esc(k.join(', ')) : '<span class="muted">nenhuma</span>';
+  }
+  function loadRoles() {
+    return api('/api/roles').then(function (d) {
+      state.roles = d.roles;
+      var tb = $('roleTbl').querySelector('tbody'); tb.innerHTML = '';
+      d.roles.forEach(function (r) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + esc(r.name) + '</td><td style="font-size:12px">' + permSummary(r.permissions) +
+          '</td><td>' + r.user_count + '</td><td></td>';
+        var del = document.createElement('button'); del.className = 'danger'; del.textContent = 'apagar';
+        del.onclick = function () {
+          api('/api/roles/' + r.id, { method: 'DELETE' })
+            .then(function () { log('papel apagado'); loadRoles().then(loadUsers); })
+            .catch(function (e) { log('papel: ' + e.message + (e.body && e.body.users ? ' (' + e.body.users + ' usuarios)' : '')); });
+        };
+        tr.lastChild.appendChild(del);
+        tb.appendChild(tr);
+      });
+      // checkboxes de permissao
+      var box = $('permBoxes');
+      if (!box.dataset.built) {
+        (d.available_permissions || []).forEach(function (perm) {
+          var lbl = document.createElement('label'); lbl.style.margin = '0'; lbl.style.fontSize = '12px';
+          lbl.innerHTML = '<input type="checkbox" value="' + perm + '" style="width:auto"> ' + perm;
+          box.appendChild(lbl);
+        });
+        box.dataset.built = '1';
+      }
+      // seletor de papel no form de usuario
+      var us = $('userRole'); us.innerHTML = '<option value="">— sem papel</option>';
+      d.roles.forEach(function (r) {
+        var o = document.createElement('option'); o.value = r.id; o.textContent = r.name; us.appendChild(o);
+      });
+    });
+  }
+  $('roleCreateBtn').onclick = function () {
+    var name = $('roleName').value.trim(); if (!name) return;
+    var perms = {};
+    $('permBoxes').querySelectorAll('input:checked').forEach(function (c) { perms[c.value] = true; });
+    jpost('/api/roles', { name: name, permissions: perms }).then(function () {
+      log('papel criado'); $('roleName').value = '';
+      $('permBoxes').querySelectorAll('input:checked').forEach(function (c) { c.checked = false; });
+      loadRoles();
+    }).catch(function (e) { log('papel: ' + e.message); });
+  };
+
+  function loadUsers() {
+    return api('/api/users').then(function (d) {
+      var tb = $('userTbl').querySelector('tbody'); tb.innerHTML = '';
+      d.users.forEach(function (u) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + u.id + '</td><td>' + esc(u.email) + (u.is_superadmin ? ' ★' : '') +
+          '</td><td>' + esc(u.name || '—') + '</td><td></td><td>' + (u.active ? 'sim' : '<span class="muted">nao</span>') +
+          '</td><td></td>';
+        var roleTd = tr.children[3], actTd = tr.children[5];
+        var rsel = document.createElement('select');
+        rsel.innerHTML = '<option value="">— sem papel</option>';
+        state.roles.forEach(function (r) {
+          var o = document.createElement('option'); o.value = r.id; o.textContent = r.name;
+          if (r.id === u.role_id) o.selected = true; rsel.appendChild(o);
+        });
+        rsel.onchange = function () {
+          jpost('/api/users/' + u.id, { role_id: rsel.value ? Number(rsel.value) : null }, 'PATCH')
+            .then(function () { log('papel de ' + u.email + ' alterado'); loadRoles(); loadUsers(); })
+            .catch(function (e) { log(e.message); });
+        };
+        roleTd.appendChild(rsel);
+        var tgl = document.createElement('button'); tgl.className = 'ghost';
+        tgl.textContent = u.active ? 'desativar' : 'ativar';
+        tgl.onclick = function () {
+          jpost('/api/users/' + u.id, { active: !u.active }, 'PATCH')
+            .then(function () { loadUsers(); }).catch(function (e) { log(e.message); });
+        };
+        actTd.appendChild(tgl);
+        tb.appendChild(tr);
+      });
+    });
+  }
+  $('userCreateBtn').onclick = function () {
+    var body = { email: $('userEmail').value.trim(), password: $('userPass').value, name: $('userName').value.trim() || undefined };
+    if ($('userRole').value) body.role_id = Number($('userRole').value);
+    if (!body.email || !body.password) return log('e-mail e senha obrigatorios');
+    jpost('/api/users', body).then(function () {
+      log('usuario criado'); $('userEmail').value = $('userPass').value = $('userName').value = '';
+      loadUsers();
+    }).catch(function (e) { log('usuario: ' + e.message); });
+  };
+
+  function refreshAll() {
+    state.companyCtx = state.companyCtx || localStorage.getItem('a3k_company_ctx') || '';
+    loadMe()
+      .then(loadCompanies)
+      .then(loadFolders).then(loadAssets).then(loadPlaylists).then(loadGroups).then(loadDevices)
+      .then(function () { return can('roles:manage') ? loadRoles() : null; })
+      .then(function () { return can('users:manage') ? loadUsers() : null; })
+      .catch(function (e) {
+        if (/HTTP 401|token/.test(e.message)) showApp(false);
+        else if (/HTTP 403|permissao/.test(e.message)) { /* usuario sem acesso admin */ }
+        else log(e.message);
+      });
     if (!window._devPoll) window._devPoll = setInterval(function () { loadGroups(); loadDevices(); }, 10000);
   }
 

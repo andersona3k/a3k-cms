@@ -2,11 +2,11 @@
 
 const express = require('express');
 const { getDb } = require('../db');
-const { requireAuth } = require('../auth/middleware');
+const { requireAuth, writeGuard } = require('../auth/middleware');
 const { buildPlaylistManifest } = require('../lib/manifest');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, writeGuard('playlists:write'));
 
 function getPlaylistScoped(db, id, companyId) {
   return db

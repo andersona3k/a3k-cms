@@ -2,12 +2,12 @@
 
 const express = require('express');
 const { getDb } = require('../db');
-const { requireAuth } = require('../auth/middleware');
+const { requireAuth, writeGuard } = require('../auth/middleware');
 const { PLAYER_TYPES } = require('../adapters');
 const { buildManifest } = require('../lib/manifest');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, writeGuard('devices:write'));
 
 function scoped(db, id, companyId) {
   return db

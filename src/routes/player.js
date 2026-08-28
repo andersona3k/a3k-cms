@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { getDb } = require('../db');
-const { defaultCompanyId } = require('../lib/company');
+const { defaultCompanyId, companyCount } = require('../lib/company');
 const { newSerial, newToken } = require('../lib/ids');
 const { buildManifest } = require('../lib/manifest');
 const { PLAYER_TYPES } = require('../adapters');
@@ -55,6 +55,10 @@ router.post('/pair/new', (req, res) => {
   const request = openPairRequest(db, code);
   if (code && !request) {
     return res.status(400).json({ error: 'codigo de pareamento invalido ou expirado' });
+  }
+  // multiempresa: sem codigo nao da p/ saber a empresa alvo.
+  if (!request && companyCount() > 1) {
+    return res.status(400).json({ error: 'informe um codigo de pareamento (multiempresa)' });
   }
 
   const companyId = request ? request.company_id : defaultCompanyId();
