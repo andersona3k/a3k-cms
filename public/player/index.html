@@ -65,6 +65,15 @@
     hardwareId: LS.get('a3k_hw') || null,
   };
 
+  // codigo de pareamento (fluxo "Add player"): da URL (?code= ou #code=) ou salvo.
+  // so vale enquanto o device ainda nao tem token.
+  function pairCode() {
+    var m = /[?#&]code=([A-Za-z0-9-]+)/.exec(location.href);
+    var fromUrl = m ? m[1] : null;
+    if (fromUrl) LS.set('a3k_code', fromUrl);
+    return device.token ? null : (fromUrl || LS.get('a3k_code') || null);
+  }
+
   if (!device.hardwareId) {
     device.hardwareId =
       (self.crypto && crypto.randomUUID)
@@ -133,24 +142,28 @@
 
   function pair() {
     setStatus('Pareando…');
+    var body = {
+      hardware_id: device.hardwareId,
+      player_type: detectPlayerType(),
+      name: null,
+    };
+    var code = pairCode();
+    if (code) body.code = code;
     return fetch(API + '/api/pair/new', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        hardware_id: device.hardwareId,
-        player_type: detectPlayerType(),
-        name: null,
-      }),
+      body: JSON.stringify(body),
     })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d || !d.token) throw new Error('pair falhou');
+        if (!d || !d.token) throw new Error(d && d.error ? d.error : 'pair falhou');
         device.id = String(d.deviceId);
         device.token = d.token;
         device.serial = d.serial;
         LS.set('a3k_device_id', device.id);
         LS.set('a3k_token', device.token);
         LS.set('a3k_serial', device.serial);
+        LS.set('a3k_code', ''); // consumido
         serialEl.textContent = device.serial;
       });
   }

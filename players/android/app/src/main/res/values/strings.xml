@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">A3K Player</string>
+    <string name="setup_title">Configuração do Player</string>
+    <string name="setup_url_label">Endereço do CMS (ex.: http://192.168.0.41:3000)</string>
+    <string name="setup_code_label">Código de pareamento (opcional)</string>
+    <string name="setup_orientation_label">Orientação</string>
+    <string name="setup_save">Salvar e iniciar</string>
+    <string name="setup_test">Testar conexão</string>
+</resources>

@@ -126,10 +126,20 @@ Sem metadados (ffprobe/sharp fica no M2), sem drag-drop (M3), sem grupos (M4).
 - `/admin/`: coluna **Horario** por item (resumo + bolinha no ar/fora) + editor
   (dias, inicio/fim, intervalo de datas).
 
-### Proximos
+### Fase 3 — apps nativos (em andamento)
 
-Fase 3 — apps nativos (APK Android, .wgt Tizen assinado, app webOS, player
-Windows). Trilho separado; so os nativos entregam offline real.
+Trilho separado, em `players/`. So os nativos entregam offline real.
+
+- **`players/android/`** — casca de kiosk (Kotlin, minSdk 28) sobre `<cms>/player/`:
+  autostart no boot, tela cheia imersiva, watchdog, e **cache de disco** que
+  interceta os GET do WebView (`/assets/*`, manifest, casca) p/ tocar offline.
+  Pareia pelo codigo do "Add player". `./gradlew :app:assembleDebug`. Ver o
+  README de la.
+- Pendente: `.wgt` Tizen assinado, app webOS, player Windows (Chrome/Edge
+  `--kiosk` vs Assigned Access vs Electron — a decidir por projeto).
+
+O player web (`public/player/index.html`) agora aceita `?code=<pairCode>` na URL
+(usado so enquanto o device nao tem token) — serve a todos os wrappers nativos.
 
 ## Setup
 
