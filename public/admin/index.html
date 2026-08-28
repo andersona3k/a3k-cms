@@ -12,6 +12,14 @@
   header b { font-size:16px; }
   main { max-width:1040px; margin:0 auto; padding:20px; display:grid; gap:16px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  #tabbar { max-width:1040px; margin:12px auto -4px; padding:0 20px; display:flex; gap:4px; flex-wrap:wrap;
+    border-bottom:1px solid var(--line); }
+  #tabbar button { background:transparent; border:1px solid transparent; border-bottom:none; color:var(--mut);
+    border-radius:9px 9px 0 0; padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer; }
+  #tabbar button:hover { color:var(--fg); }
+  #tabbar button.active { background:var(--card); border-color:var(--line); color:var(--fg); }
+  .tabpane { display:none; }
+  .tabpane.active { display:block; }
   .card h2 { margin:0 0 12px; font-size:14px; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); }
   label { display:block; font-size:12px; color:var(--mut); margin:8px 0 3px; }
   input, select, button { font:inherit; padding:8px 10px; border-radius:7px; border:1px solid var(--line);
@@ -30,6 +38,14 @@
   .muted { color:var(--mut); }
   #log { white-space:pre-wrap; font:12px/1.4 ui-monospace,monospace; color:var(--mut);
     max-height:140px; overflow:auto; background:#0d141c; border:1px solid var(--line); border-radius:7px; padding:8px; }
+  #logBar { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line); z-index:15; }
+  #logBar[open] { display:flex; flex-direction:column-reverse; }
+  #logBar > summary { list-style:none; cursor:pointer; padding:7px 20px; color:var(--mut); font-size:12px;
+    user-select:none; display:flex; gap:8px; align-items:center; }
+  #logBar > summary::-webkit-details-marker { display:none; }
+  #logBar[open] > summary { border-top:1px solid var(--line); }
+  #logBar #log { max-height:38vh; margin:0; border:0; border-radius:0; }
+  body.authed { padding-bottom:38px; }
   #loginView { max-width:360px; margin:60px auto; }
   .hidden { display:none !important; }
   #infoPanel { position:fixed; top:0; right:0; height:100%; width:360px; background:var(--card);
@@ -74,9 +90,17 @@
   <p class="muted" id="loginErr"></p>
 </div>
 
+<nav id="tabbar" class="hidden">
+  <button data-target="pane-biblioteca">Biblioteca</button>
+  <button data-target="pane-playlist">Playlists</button>
+  <button data-target="pane-grupos">Grupos</button>
+  <button data-target="pane-dispositivos">Dispositivos</button>
+  <button data-target="adminCard" id="tabAdminBtn" class="hidden">Administração</button>
+</nav>
+
 <main id="appView" class="hidden">
-  <div class="card">
-    <h2>1 · Biblioteca</h2>
+  <div class="card tabpane" id="pane-biblioteca">
+    <h2>Biblioteca</h2>
     <div class="row">
       <div><label>Pasta atual</label>
         <select id="folderSelect"></select></div>
@@ -94,8 +118,8 @@
     <p class="muted">Clique numa linha para o painel de info.</p>
   </div>
 
-  <div class="card">
-    <h2>2 · Playlist</h2>
+  <div class="card tabpane" id="pane-playlist">
+    <h2>Playlists</h2>
     <div class="row">
       <div><label>Nova playlist</label><input id="plName" placeholder="Vitrine" /></div>
       <button id="plCreateBtn">Criar</button>
@@ -121,8 +145,8 @@
     <p class="muted">Arraste pela alca <span style="cursor:grab">⠿</span> para reordenar. A duracao salva ao sair do campo.</p>
   </div>
 
-  <div class="card">
-    <h2>3 · Grupos de dispositivos</h2>
+  <div class="card tabpane" id="pane-grupos">
+    <h2>Grupos de dispositivos</h2>
     <div class="row">
       <div><label>Novo grupo</label><input id="grpName" placeholder="Loja Centro" /></div>
       <button id="grpCreateBtn">Criar grupo</button>
@@ -130,8 +154,8 @@
     <table id="grpTbl"><thead><tr><th>Grupo</th><th>Devices</th><th>Playlist do grupo</th><th>Ação</th></tr></thead><tbody></tbody></table>
   </div>
 
-  <div class="card">
-    <h2>4 · Dispositivos</h2>
+  <div class="card tabpane" id="pane-dispositivos">
+    <h2>Dispositivos</h2>
     <p class="muted">Abra <code id="playerUrl"></code> num monitor/aba (pareamento aberto), ou use <b>Add player</b> para gerar um codigo com nome/grupo/tipo ja definidos.</p>
     <div class="row">
       <button id="addPlayerBtn">Add player</button>
@@ -142,8 +166,8 @@
     </tr></thead><tbody></tbody></table>
   </div>
 
-  <div class="card hidden" id="adminCard">
-    <h2>5 · Administracao</h2>
+  <div class="card tabpane hidden" id="adminCard">
+    <h2>Administracao</h2>
 
     <div id="companiesBlock" class="hidden">
       <h3 style="color:var(--mut);font-size:13px;margin:4px 0">Empresas</h3>
@@ -175,8 +199,12 @@
     </div>
   </div>
 
-  <div class="card"><h2>Log</h2><div id="log"></div></div>
 </main>
+
+<details id="logBar" class="hidden">
+  <summary>▸ Log</summary>
+  <div id="log"></div>
+</details>
 
 <div id="addPlayerModal" class="hidden">
   <div class="modalBox">
@@ -274,8 +302,55 @@
   // ---- auth ----
   function showApp(show) {
     $('appView').classList.toggle('hidden', !show);
+    $('tabbar').classList.toggle('hidden', !show);
+    $('logBar').classList.toggle('hidden', !show);
     $('loginView').classList.toggle('hidden', show);
-    if (show) { $('playerUrl').textContent = API + '/player/'; refreshAll(); }
+    document.body.classList.toggle('authed', show);
+    if (show) { $('playerUrl').textContent = API + '/player/'; initTabs(); refreshAll(); }
+  }
+
+  // ---- abas ----
+  var TABS = ['pane-biblioteca', 'pane-playlist', 'pane-grupos', 'pane-dispositivos', 'adminCard'];
+  var _tabsWired = false;
+  var _bootTab = '';
+  function tabAvailable(id) {
+    if (id === 'adminCard') return !$('adminCard').classList.contains('hidden');
+    return TABS.indexOf(id) >= 0;
+  }
+  function showTab(id) {
+    if (!tabAvailable(id)) id = 'pane-biblioteca';
+    TABS.forEach(function (t) {
+      var pane = $(t); if (pane && t !== 'adminCard') pane.classList.toggle('active', t === id);
+    });
+    // adminCard: 'active' so entra se tiver permissao (senao 'hidden' o mantem fora)
+    $('adminCard').classList.toggle('active', id === 'adminCard');
+    var btns = $('tabbar').querySelectorAll('button[data-target]');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('active', btns[i].getAttribute('data-target') === id);
+    }
+    try { localStorage.setItem('a3k_admin_tab', id); } catch (e) {}
+    if (location.hash.slice(1) !== id) {
+      try { history.replaceState(null, '', '#' + id); } catch (e) { location.hash = id; }
+    }
+  }
+  function initTabs() {
+    if (!_tabsWired) {
+      _tabsWired = true;
+      var btns = $('tabbar').querySelectorAll('button[data-target]');
+      for (var i = 0; i < btns.length; i++) {
+        (function (b) { b.onclick = function () { showTab(b.getAttribute('data-target')); }; })(btns[i]);
+      }
+      window.addEventListener('hashchange', function () {
+        var h = location.hash.slice(1); if (h && tabAvailable(h)) showTab(h);
+      });
+      $('logBar').addEventListener('toggle', function () {
+        this.querySelector('summary').firstChild.nodeValue = (this.open ? '▾ ' : '▸ ') + 'Log';
+      });
+    }
+    var saved = '';
+    try { saved = localStorage.getItem('a3k_admin_tab') || ''; } catch (e) {}
+    _bootTab = location.hash.slice(1) || saved || 'pane-biblioteca';
+    showTab(_bootTab);
   }
   $('loginBtn').onclick = function () {
     jpost('/api/auth/login', { email: $('email').value, password: $('password').value })
@@ -844,7 +919,14 @@
         (state.companyCtx ? ' · empresa ' + state.companyCtx : '');
       $('companiesBlock').classList.toggle('hidden', !d.user.isSuperadmin);
       $('companyCtx').classList.toggle('hidden', !d.user.isSuperadmin);
-      $('adminCard').classList.toggle('hidden', !(can('roles:manage') || can('users:manage')));
+      var admin = can('roles:manage') || can('users:manage');
+      $('adminCard').classList.toggle('hidden', !admin);
+      $('tabAdminBtn').classList.toggle('hidden', !admin);
+      if (!admin && $('adminCard').classList.contains('active')) showTab('pane-biblioteca');
+      // aba Administração so fica disponivel depois do loadMe: reaplica se era a salva
+      if (admin && _bootTab === 'adminCard' && !$('adminCard').classList.contains('active')) {
+        _bootTab = ''; showTab('adminCard');
+      }
     });
   }
   $('companyCtx').onchange = function () {

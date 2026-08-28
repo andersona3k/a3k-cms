@@ -255,8 +255,10 @@ src/
     player.js           pair/new (com codigo), manifest (?v & ?p), heartbeat
 public/
   player/index.html    player kiosk (vanilla) — segue ?p= p/ detectar troca de playlist
-  admin/index.html     painel: biblioteca, playlist (drag-drop+preview), grupos,
-                       dispositivos, Add player, administracao (empresas/papeis/usuarios)
+  admin/index.html     painel em ABAS (Biblioteca · Playlists · Grupos · Dispositivos ·
+                       Administracao) + barra de Log retratil no rodape. Aba lembrada
+                       em localStorage e no hash da URL (#pane-playlist etc.); a aba
+                       Administracao so aparece com permissao roles/users:manage
 node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
