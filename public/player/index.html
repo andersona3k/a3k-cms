@@ -15,9 +15,17 @@
   #stage.rot90,  #status.rot90  { width: 100vh; height: 100vw; transform: translateX(100vw) rotate(90deg); transform-origin: top left; }
   #stage.rot180, #status.rot180 { transform: rotate(180deg); transform-origin: center; }
   #stage.rot270, #status.rot270 { width: 100vh; height: 100vw; transform: translateY(100vh) rotate(-90deg); transform-origin: top left; }
-  #stage img, #stage video {
-    max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain;
+  #stage > * {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    object-fit: contain; background: #000;
   }
+  /* cobre a troca de midia: preto por cima enquanto o proximo item carrega,
+     some quando ele comeca a tocar/renderizar. Mata o "botao de play". */
+  #cover {
+    position: fixed; inset: 0; background: #000; z-index: 5;
+    opacity: 0; pointer-events: none; transition: opacity 220ms ease;
+  }
+  #cover.on { opacity: 1; transition: none; }  /* entra instantaneo, sai suave */
   #status {
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
     display: flex; flex-direction: column;
@@ -40,6 +48,7 @@
 </head>
 <body>
   <div id="stage"></div>
+  <div id="cover"></div>
   <div id="status">
     <div>A3K Digital Signage</div>
     <div class="serial" id="serial">…</div>
@@ -52,7 +61,7 @@
 (function () {
   'use strict';
 
-  var PLAYER_VERSION = '2026-08-28.3';
+  var PLAYER_VERSION = '2026-08-28.5';
   var API = location.origin;
   var POLL_MS = 15000;
   var HEARTBEAT_MS = 60000;
@@ -63,6 +72,7 @@
   };
 
   var stage = document.getElementById('stage');
+  var cover = document.getElementById('cover');
   var statusEl = document.getElementById('status');
   var serialEl = document.getElementById('serial');
   var statusMsg = document.getElementById('statusMsg');
@@ -258,48 +268,86 @@
     showStatus(true);
     setStatus(msg, 'Serial: ' + device.serial);
     clearTimeout(advanceTimer);
+    cover.classList.remove('on');
+    clearStage();
+  }
+
+  // 1x1 transparente — poster do <video> sem o "botao de play".
+  var BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  var preloadEl = null;
+
+  function clearStage() {
+    Array.prototype.slice.call(stage.children).forEach(function (c) {
+      try { if (c.tagName === 'VIDEO') { c.pause(); c.removeAttribute('src'); c.load(); } } catch (e) {}
+    });
     stage.innerHTML = '';
   }
+
+  // Prebusca o proximo item (aquece o cache de disco do app nativo).
+  function preloadNext() {
+    if (playlist.length < 2) return;
+    var nx = playlist[(idx + 1) % playlist.length];
+    if (preloadEl) { try { preloadEl.src = ''; } catch (e) {} }
+    preloadEl = nx.type === 'video' ? document.createElement('video') : new Image();
+    if (preloadEl.tagName === 'VIDEO') { preloadEl.preload = 'auto'; preloadEl.muted = true; }
+    preloadEl.src = API + nx.url;
+  }
+
+  var renderSeq = 0;
 
   function render() {
     clearTimeout(advanceTimer);
     if (!playlist.length) return;
+    var mySeq = ++renderSeq;
     var item = playlist[idx];
     var dur = (item.duration || 10) * 1000;
-    stage.innerHTML = '';
+    var loop = playlist.length === 1;
+
+    // preto por cima enquanto o proximo item carrega
+    cover.classList.add('on');
+    var revealed = false;
+    function reveal() {
+      if (revealed || mySeq !== renderSeq) return;
+      revealed = true;
+      cover.classList.remove('on');
+    }
 
     if (item.type === 'video') {
       var v = document.createElement('video');
-      v.src = API + item.url;
       v.autoplay = true; v.muted = true; v.playsInline = true; v.controls = false;
-      v.preload = 'auto';
+      v.preload = 'auto'; v.poster = BLANK;
       v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
-      var single = playlist.length === 1;
-      if (single) {
-        v.loop = true;                 // 1 item: loop nativo, sem tela preta no fim
-      } else {
-        v.onended = next;
-      }
-      v.onerror = function () { clearTimeout(advanceTimer); advanceTimer = setTimeout(next, 3000); };
+      v.loop = loop;
+      if (!loop) v.onended = next;
+      v.onerror = function () { clearTimeout(advanceTimer); reveal(); advanceTimer = setTimeout(next, 3000); };
       v.oncanplay = function () { v.play().catch(function () {}); };
+      v.addEventListener('playing', reveal, { once: true });
       v.onloadedmetadata = function () {
-        if (single) return;
-        // avanca pela duracao real do video (nao pelo campo "duration" da playlist)
-        var ms = (v.duration && isFinite(v.duration) ? v.duration : (dur / 1000)) * 1000 + 1500;
+        preloadNext();
+        if (loop) return;
+        var ms = (v.duration && isFinite(v.duration) ? v.duration : dur / 1000) * 1000 + 700;
         clearTimeout(advanceTimer);
         advanceTimer = setTimeout(next, ms);
       };
+
+      clearStage();
       stage.appendChild(v);
+      v.src = API + item.url;
       v.play().catch(function () {});
-      // teto ate os metadados carregarem
-      if (!single) advanceTimer = setTimeout(next, Math.max(dur, 15000));
+      setTimeout(reveal, 2500);                 // revela mesmo se 'playing' nao vier
+      if (!loop) advanceTimer = setTimeout(next, Math.max(dur, 20000));
     } else if (item.type === 'image' || item.type === 'other' || item.type === 'html') {
       var img = document.createElement('img');
-      img.src = API + item.url;
-      img.onerror = function () { advanceTimer = setTimeout(next, 3000); };
+      img.onload = function () { reveal(); preloadNext(); };
+      img.onerror = function () { reveal(); clearTimeout(advanceTimer); advanceTimer = setTimeout(next, 3000); };
+      clearStage();
       stage.appendChild(img);
+      img.src = API + item.url;
+      setTimeout(reveal, 2000);
       advanceTimer = setTimeout(next, dur);
     } else {
+      clearStage();
+      reveal();
       advanceTimer = setTimeout(next, dur);
     }
   }
