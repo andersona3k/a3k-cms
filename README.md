@@ -46,11 +46,22 @@ Sem metadados (ffprobe/sharp fica no M2), sem drag-drop (M3), sem grupos (M4).
 - Painel de info do arquivo no `/admin/` (formato, resolucao, fps, bitrate,
   codec, tamanho, hash, status do probe) + preview.
 
+### M3 — Playlist UX (concluido)
+
+- **Reordenar**: `PUT /api/playlists/:id/order` `{item_ids:[...]}` — exige
+  exatamente o conjunto atual de itens; grava `ordem` e bumpa a `version`.
+- **Editar item**: `PATCH /api/playlists/:id/items/:itemId` `{duration?,ordem?}`.
+- **Preview**: `GET /api/playlists/:id/manifest` devolve o mesmo shape do
+  manifest de device (playlist isolada, sem precisar de um device).
+- `/admin/`: drag-and-drop dos itens (SortableJS, servido de `node_modules`
+  em `/vendor/sortablejs/`), duracao editavel inline, modal de preview que
+  toca a playlist item a item.
+
 ### Proximos
 
-M3 playlist UX (drag-drop, reordenar, preview), M4 dispositivos a fundo
-(grupos, assign-to-grupo, fluxo "Add player" por adapter), M5 multiempresa +
-permissoes (enforcement), M6 day-parting, Fase 3 apps nativos.
+M4 dispositivos a fundo (grupos, assign-to-grupo, fluxo "Add player" por
+adapter), M5 multiempresa + permissoes (enforcement), M6 day-parting,
+Fase 3 apps nativos.
 
 ## Setup
 
@@ -62,7 +73,7 @@ npm run seed              # cria empresa A3K + role admin + usuario admin
 npm start                 # sobe em http://localhost:3000
 ```
 
-`npm run reset` apaga o banco. `npm test` roda os testes de aceite (M0 + M1).
+`npm run reset` apaga o banco. `npm test` roda os testes de aceite (M0..M3).
 
 ## API
 
@@ -84,8 +95,11 @@ npm start                 # sobe em http://localhost:3000
 | DELETE | `/api/folders/:id[?force=true]` | apaga (409 se nao vazia) |
 | POST | `/api/playlists` | `{name}` -> playlist |
 | GET  | `/api/playlists` · `/api/playlists/:id` | lista / detalhe com itens |
+| GET  | `/api/playlists/:id/manifest` | preview: mesmo shape do manifest de device |
 | POST | `/api/playlists/:id/items` | `{asset_id,duration?,ordem?}` (bumpa version) |
+| PATCH | `/api/playlists/:id/items/:itemId` | `{duration?,ordem?}` (bumpa version) |
 | PUT  | `/api/playlists/:id/items` | `{items:[{asset_id,duration}]}` substitui tudo |
+| PUT  | `/api/playlists/:id/order` | `{item_ids:[...]}` reordena (bumpa version) |
 | DELETE | `/api/playlists/:id/items/:itemId` | remove item (bumpa version) |
 | GET  | `/api/devices` · `/api/devices/:id` | lista / detalhe (+ manifest) |
 | PATCH | `/api/devices/:id` | `{name?,status?,player_type?,group_id?}` |
@@ -133,22 +147,23 @@ src/
     ids.js             gerador de serial + token de device
     company.js         empresa padrao (M1 single-company)
     media.js           storage do multer, hash sha256, dedup
-    manifest.js        resolve assignment + monta o manifest
+    manifest.js        manifest de device + manifest de playlist (preview)
     probe.js           sharp (imagem) + ffprobe (video/audio), normalizacao
     library.js         aplica probe no asset, apaga arquivo orfao
   routes/
     assets.js          upload+probe / filtro por pasta / mover / reprobe / delete
     folders.js         CRUD de pastas + move com anti-ciclo + delete guard
-    playlists.js       CRUD + itens + bump de version
+    playlists.js       CRUD + itens + reordenar + patch item + manifest (preview)
     devices.js         listagem / patch / assign (admin)
     player.js          pair/new, manifest, heartbeat (device token)
 public/
   player/index.html    player kiosk (vanilla)
-  admin/index.html     mini painel para dirigir o M1
+  admin/index.html     painel: biblioteca+pastas, playlist (drag-drop+preview), devices
+node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0.test.js · m1.test.js · m2.test.js   testes de aceite
+  m0.test.js · m1.test.js · m2.test.js · m3.test.js   testes de aceite
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`

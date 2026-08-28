@@ -31,12 +31,22 @@
   #log { white-space:pre-wrap; font:12px/1.4 ui-monospace,monospace; color:var(--mut);
     max-height:140px; overflow:auto; background:#0d141c; border:1px solid var(--line); border-radius:7px; padding:8px; }
   #loginView { max-width:360px; margin:60px auto; }
-  .hidden { display:none; }
+  .hidden { display:none !important; }
   #infoPanel { position:fixed; top:0; right:0; height:100%; width:360px; background:var(--card);
     border-left:1px solid var(--line); padding:20px; overflow:auto; box-shadow:-8px 0 24px #0006; z-index:20; }
   #infoPanel dl { display:grid; grid-template-columns:110px 1fr; gap:4px 10px; font-size:13px; margin:12px 0; }
   #infoPanel dt { color:var(--mut); } #infoPanel dd { margin:0; word-break:break-all; }
   #infoPanel img, #infoPanel video { max-width:100%; border-radius:8px; border:1px solid var(--line); background:#000; }
+  .drag { cursor:grab; color:var(--mut); user-select:none; }
+  tr.sortable-ghost { opacity:.4; }
+  tr.sortable-chosen { background:#1b2733; }
+  td .durInput { width:80px; }
+  #previewModal { position:fixed; inset:0; background:#000d; display:flex; align-items:center; justify-content:center; z-index:30; }
+  #previewStage { width:80vw; height:80vh; background:#000; border:1px solid var(--line); border-radius:10px;
+    display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  #previewStage img, #previewStage video { width:100%; height:100%; object-fit:contain; }
+  #previewBar { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); display:flex; gap:10px; align-items:center;
+    background:var(--card); border:1px solid var(--line); border-radius:999px; padding:8px 16px; font-size:13px; }
 </style>
 </head>
 <body>
@@ -84,9 +94,11 @@
       <div><label>Asset</label><select id="plAsset"></select></div>
       <div><label>Duracao (s)</label><input id="plDur" type="number" value="10" style="width:80px" /></div>
       <button id="plAddBtn">Adicionar item</button>
+      <button class="ghost" id="plPreviewBtn">Preview</button>
     </div>
-    <table id="plItemsTbl"><thead><tr><th>Ordem</th><th>Asset</th><th>Tipo</th><th>Dur</th><th></th></tr></thead><tbody></tbody></table>
+    <table id="plItemsTbl"><thead><tr><th style="width:24px"></th><th>#</th><th>Asset</th><th>Tipo</th><th>Duracao (s)</th><th></th></tr></thead><tbody id="plItemsBody"></tbody></table>
     <p class="muted" id="plVersion"></p>
+    <p class="muted">Arraste pela alca <span style="cursor:grab">⠿</span> para reordenar. A duracao salva ao sair do campo.</p>
   </div>
 
   <div class="card">
@@ -101,6 +113,18 @@
 
 <div id="infoPanel" class="hidden"></div>
 
+<div id="previewModal" class="hidden">
+  <div id="previewStage"></div>
+  <div id="previewBar">
+    <button class="ghost" id="pvPrev">‹</button>
+    <span id="pvLabel">—</span>
+    <button class="ghost" id="pvNext">›</button>
+    <button class="ghost" id="pvPlay">pausar</button>
+    <button id="pvClose">fechar</button>
+  </div>
+</div>
+
+<script src="/vendor/sortablejs/Sortable.min.js"></script>
 <script>
 (function () {
   'use strict';
@@ -318,24 +342,89 @@
       return loadPlaylistItems();
     });
   }
+  var sortable = null;
   function loadPlaylistItems() {
-    if (!state.activePlaylist) { $('plItemsTbl').querySelector('tbody').innerHTML = ''; return Promise.resolve(); }
+    var tb = $('plItemsBody');
+    if (!state.activePlaylist) { tb.innerHTML = ''; return Promise.resolve(); }
     return api('/api/playlists/' + state.activePlaylist).then(function (d) {
-      var tb = $('plItemsTbl').querySelector('tbody'); tb.innerHTML = '';
-      d.items.forEach(function (it) {
-        tb.insertAdjacentHTML('beforeend',
-          '<tr><td>' + it.ordem + '</td><td>' + esc(it.filename) + '</td><td>' + it.type +
-          '</td><td>' + it.duration + 's</td><td><button class="ghost" data-del="' + it.id + '">remover</button></td></tr>');
-      });
-      tb.querySelectorAll('[data-del]').forEach(function (b) {
-        b.onclick = function () {
-          api('/api/playlists/' + state.activePlaylist + '/items/' + b.dataset.del, { method: 'DELETE' })
-            .then(function (d) { log('item removido, v' + d.version); loadPlaylistItems(); loadPlaylists(); });
+      tb.innerHTML = '';
+      d.items.forEach(function (it, idx) {
+        var tr = document.createElement('tr');
+        tr.setAttribute('data-item', it.id);
+        tr.innerHTML =
+          '<td class="drag" title="arraste">⠿</td><td>' + (idx + 1) + '</td><td>' + esc(it.filename) +
+          '</td><td>' + it.type +
+          '</td><td><input class="durInput" type="number" min="0.5" step="0.5" value="' + it.duration + '" /></td>' +
+          '<td><button class="ghost" data-del="' + it.id + '">remover</button></td>';
+        tb.appendChild(tr);
+        tr.querySelector('.durInput').onchange = function () {
+          var v = Number(this.value);
+          jpost('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { duration: v }, 'PATCH')
+            .then(function (r) { log('item ' + it.id + ' dur=' + v + ', v' + r.version); loadPlaylists(); })
+            .catch(function (e) { log('duracao: ' + e.message); loadPlaylistItems(); });
+        };
+        tr.querySelector('[data-del]').onclick = function () {
+          api('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { method: 'DELETE' })
+            .then(function (r) { log('item removido, v' + r.version); loadPlaylistItems(); loadPlaylists(); });
         };
       });
-      $('plVersion').textContent = 'playlist "' + d.playlist.name + '" — versao ' + d.playlist.version;
+      $('plVersion').textContent = 'playlist "' + d.playlist.name + '" — versao ' + d.playlist.version +
+        ' — ' + d.items.length + ' item(s)';
+
+      if (sortable) sortable.destroy();
+      sortable = window.Sortable && window.Sortable.create(tb, {
+        handle: '.drag', animation: 120, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen',
+        onEnd: function () {
+          var ids = Array.prototype.map.call(tb.querySelectorAll('tr'), function (r) {
+            return Number(r.getAttribute('data-item'));
+          });
+          jpost('/api/playlists/' + state.activePlaylist + '/order', { item_ids: ids }, 'PUT')
+            .then(function (r) { log('reordenado, v' + r.version); loadPlaylistItems(); loadPlaylists(); })
+            .catch(function (e) { log('ordenar: ' + e.message); loadPlaylistItems(); });
+        },
+      });
     });
   }
+
+  // ---- preview ----
+  var pv = { items: [], idx: 0, timer: null, playing: true };
+  $('plPreviewBtn').onclick = function () {
+    if (!state.activePlaylist) return log('selecione uma playlist');
+    api('/api/playlists/' + state.activePlaylist + '/manifest').then(function (m) {
+      if (!m.items.length) return log('playlist sem itens');
+      pv.items = m.items; pv.idx = 0; pv.playing = true;
+      $('previewModal').classList.remove('hidden');
+      $('pvPlay').textContent = 'pausar';
+      pvRender();
+    }).catch(function (e) { log('preview: ' + e.message); });
+  };
+  function pvRender() {
+    clearTimeout(pv.timer);
+    if ($('previewModal').classList.contains('hidden')) return;
+    var it = pv.items[pv.idx];
+    var st = $('previewStage'); st.innerHTML = '';
+    $('pvLabel').textContent = (pv.idx + 1) + '/' + pv.items.length + ' · ' + it.filename + ' · ' + it.duration + 's';
+    if (it.type === 'video') {
+      var v = document.createElement('video');
+      v.src = API + it.url; v.autoplay = true; v.muted = true; v.playsInline = true; v.controls = false;
+      v.onended = pvNext; st.appendChild(v);
+      if (pv.playing) pv.timer = setTimeout(pvNext, Math.max(it.duration * 1000, 60000));
+    } else {
+      var img = document.createElement('img'); img.src = API + it.url; st.appendChild(img);
+      if (pv.playing) pv.timer = setTimeout(pvNext, it.duration * 1000);
+    }
+  }
+  function pvNext() { pv.idx = (pv.idx + 1) % pv.items.length; pvRender(); }
+  function pvPrevFn() { pv.idx = (pv.idx - 1 + pv.items.length) % pv.items.length; pvRender(); }
+  $('pvNext').onclick = pvNext;
+  $('pvPrev').onclick = pvPrevFn;
+  $('pvPlay').onclick = function () {
+    pv.playing = !pv.playing; this.textContent = pv.playing ? 'pausar' : 'tocar';
+    if (pv.playing) pvRender(); else clearTimeout(pv.timer);
+  };
+  $('pvClose').onclick = function () {
+    clearTimeout(pv.timer); $('previewStage').innerHTML = ''; $('previewModal').classList.add('hidden');
+  };
 
   // ---- devices ----
   function updateDevPlaylistOptions() {

@@ -3,6 +3,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const { requireAuth } = require('../auth/middleware');
+const { buildPlaylistManifest } = require('../lib/manifest');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -73,6 +74,14 @@ router.get('/:id', (req, res) => {
   res.json({ playlist, items: itemsOf(db, playlist.id) });
 });
 
+// GET /api/playlists/:id/manifest  -> mesmo shape do manifest de device (preview)
+router.get('/:id/manifest', (req, res) => {
+  const db = getDb();
+  const playlist = getPlaylistScoped(db, req.params.id, req.auth.companyId);
+  if (!playlist) return res.status(404).json({ error: 'playlist nao encontrada' });
+  res.json(buildPlaylistManifest(playlist));
+});
+
 // PATCH /api/playlists/:id  { name }
 router.patch('/:id', (req, res) => {
   const db = getDb();
@@ -127,6 +136,100 @@ router.post('/:id/items', (req, res) => {
     db.exec('ROLLBACK');
     throw err;
   }
+});
+
+// PATCH /api/playlists/:id/items/:itemId  { duration?, ordem? }
+router.patch('/:id/items/:itemId', (req, res) => {
+  const db = getDb();
+  const playlist = getPlaylistScoped(db, req.params.id, req.auth.companyId);
+  if (!playlist) return res.status(404).json({ error: 'playlist nao encontrada' });
+
+  const item = db
+    .prepare('SELECT * FROM playlist_items WHERE id = ? AND playlist_id = ?')
+    .get(Number(req.params.itemId), playlist.id);
+  if (!item) return res.status(404).json({ error: 'item nao encontrado' });
+
+  const b = req.body || {};
+  const sets = [];
+  const vals = [];
+  if (b.duration !== undefined) {
+    const d = Number(b.duration);
+    if (!Number.isFinite(d) || d <= 0) return res.status(400).json({ error: 'duration invalida' });
+    sets.push('duration = ?'); vals.push(d);
+  }
+  if (b.ordem !== undefined) {
+    const o = Number(b.ordem);
+    if (!Number.isInteger(o) || o < 0) return res.status(400).json({ error: 'ordem invalida' });
+    sets.push('ordem = ?'); vals.push(o);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'nada para atualizar' });
+
+  db.exec('BEGIN');
+  try {
+    sets.push(`updated_at = datetime('now')`);
+    vals.push(item.id);
+    db.prepare(`UPDATE playlist_items SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+    bumpVersion(db, playlist.id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  res.json({
+    items: itemsOf(db, playlist.id),
+    version: getPlaylistScoped(db, playlist.id, req.auth.companyId).version,
+  });
+});
+
+// PUT /api/playlists/:id/order  { item_ids: [...] }  (reordena os itens existentes)
+router.put('/:id/order', (req, res) => {
+  const db = getDb();
+  const playlist = getPlaylistScoped(db, req.params.id, req.auth.companyId);
+  if (!playlist) return res.status(404).json({ error: 'playlist nao encontrada' });
+
+  const ids = Array.isArray(req.body && req.body.item_ids)
+    ? req.body.item_ids.map(Number)
+    : null;
+  if (!ids) return res.status(400).json({ error: 'item_ids[] obrigatorio' });
+  if (ids.some((n) => !Number.isInteger(n))) {
+    return res.status(400).json({ error: 'item_ids invalidos' });
+  }
+
+  const current = db
+    .prepare('SELECT id FROM playlist_items WHERE playlist_id = ?')
+    .all(playlist.id)
+    .map((r) => r.id);
+
+  const set = new Set(ids);
+  if (set.size !== ids.length) {
+    return res.status(400).json({ error: 'item_ids com repeticao' });
+  }
+  if (
+    ids.length !== current.length ||
+    current.some((id) => !set.has(id))
+  ) {
+    return res.status(400).json({
+      error: 'item_ids precisa conter exatamente os itens atuais da playlist',
+      current,
+    });
+  }
+
+  db.exec('BEGIN');
+  try {
+    const upd = db.prepare(
+      `UPDATE playlist_items SET ordem = ?, updated_at = datetime('now') WHERE id = ? AND playlist_id = ?`
+    );
+    ids.forEach((id, idx) => upd.run(idx, id, playlist.id));
+    bumpVersion(db, playlist.id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  res.json({
+    items: itemsOf(db, playlist.id),
+    version: getPlaylistScoped(db, playlist.id, req.auth.companyId).version,
+  });
 });
 
 // DELETE /api/playlists/:id/items/:itemId

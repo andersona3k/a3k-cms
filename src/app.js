@@ -21,7 +21,7 @@ function createApp() {
 
   // Health — sem auth.
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M2' });
+    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M3' });
   });
 
   // Auth.
@@ -57,9 +57,15 @@ function createApp() {
   app.use('/player', express.static(path.join(__dirname, '..', 'public', 'player')));
   app.use('/admin', express.static(path.join(__dirname, '..', 'public', 'admin')));
 
+  // libs de frontend servidas direto do node_modules (SortableJS p/ drag-drop).
+  app.use(
+    '/vendor/sortablejs',
+    express.static(path.join(__dirname, '..', 'node_modules', 'sortablejs'), { index: false })
+  );
+
   app.get('/', (req, res) => {
     res.type('text/plain').send(
-      `${pkg.name} v${pkg.version} — M2 (biblioteca)\n\n` +
+      `${pkg.name} v${pkg.version} — M3 (playlist UX)\n\n` +
         `player kiosk : /player/\n` +
         `admin        : /admin/\n` +
         `health       : /api/health\n`

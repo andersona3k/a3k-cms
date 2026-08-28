@@ -25,7 +25,43 @@ function resolvePlaylistId(db, device) {
   return null;
 }
 
-// Monta o manifest — IDENTICO para todos os tipos de player.
+// Itens de uma playlist no formato do manifest (mesmo shape p/ device e preview).
+function playlistManifestItems(db, playlistId) {
+  const rows = db
+    .prepare(
+      `SELECT pi.id, pi.ordem, pi.duration,
+              a.type, a.filename, a.url, a.hash, a.size_bytes, a.mime
+         FROM playlist_items pi
+         JOIN assets a ON a.id = pi.asset_id
+        WHERE pi.playlist_id = ?
+        ORDER BY pi.ordem, pi.id`
+    )
+    .all(playlistId);
+
+  return rows.map((r) => ({
+    id: r.id,
+    type: r.type,
+    url: r.url,
+    filename: r.filename,
+    mime: r.mime,
+    duration: r.duration != null ? r.duration : 10,
+    hash: r.hash ? `sha256:${r.hash}` : null,
+    bytes: r.size_bytes,
+  }));
+}
+
+// Manifest de uma playlist isolada (usado pelo preview do admin).
+function buildPlaylistManifest(playlist) {
+  const db = getDb();
+  return {
+    playlist: { id: playlist.id, name: playlist.name },
+    version: playlist.version,
+    generatedAt: new Date().toISOString(),
+    items: playlistManifestItems(db, playlist.id),
+  };
+}
+
+// Monta o manifest do device — IDENTICO para todos os tipos de player.
 function buildManifest(device) {
   const db = getDb();
   const playlistId = resolvePlaylistId(db, device);
@@ -42,34 +78,16 @@ function buildManifest(device) {
   }
 
   const playlist = db.prepare('SELECT * FROM playlists WHERE id = ?').get(playlistId);
-  const rows = db
-    .prepare(
-      `SELECT pi.id, pi.ordem, pi.duration,
-              a.type, a.filename, a.url, a.hash, a.size_bytes, a.mime
-         FROM playlist_items pi
-         JOIN assets a ON a.id = pi.asset_id
-        WHERE pi.playlist_id = ?
-        ORDER BY pi.ordem, pi.id`
-    )
-    .all(playlistId);
-
   return {
     deviceId: device.id,
     serial: device.serial,
-    playlist: { id: playlist.id, name: playlist.name },
-    version: playlist.version,
-    generatedAt: new Date().toISOString(),
-    items: rows.map((r) => ({
-      id: r.id,
-      type: r.type,
-      url: r.url,
-      filename: r.filename,
-      mime: r.mime,
-      duration: r.duration != null ? r.duration : 10,
-      hash: r.hash ? `sha256:${r.hash}` : null,
-      bytes: r.size_bytes,
-    })),
+    ...buildPlaylistManifest(playlist),
   };
 }
 
-module.exports = { buildManifest, resolvePlaylistId };
+module.exports = {
+  buildManifest,
+  buildPlaylistManifest,
+  playlistManifestItems,
+  resolvePlaylistId,
+};
