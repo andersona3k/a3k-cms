@@ -22,23 +22,51 @@ function publicDevice(d) {
   return { ...rest, paired: !!token };
 }
 
+// device + playlist efetiva (propria ou herdada do grupo)
+function deviceWithResolution(db, d) {
+  const own = db
+    .prepare(
+      `SELECT p.id, p.name, p.version FROM assignments a JOIN playlists p ON p.id = a.playlist_id
+        WHERE a.company_id = ? AND a.target_type = 'device' AND a.target_id = ?`
+    )
+    .get(d.company_id, d.id);
+  const grp = d.group_id
+    ? db
+        .prepare(
+          `SELECT p.id, p.name, p.version FROM assignments a JOIN playlists p ON p.id = a.playlist_id
+            WHERE a.company_id = ? AND a.target_type = 'group' AND a.target_id = ?`
+        )
+        .get(d.company_id, d.group_id)
+    : null;
+  const groupName = d.group_id
+    ? (db.prepare('SELECT name FROM device_groups WHERE id = ?').get(d.group_id) || {}).name
+    : null;
+
+  const eff = own
+    ? { ...own, source: 'device' }
+    : grp
+      ? { ...grp, source: 'group' }
+      : null;
+
+  return {
+    ...publicDevice(d),
+    group_name: groupName || null,
+    own_playlist: own || null,
+    effective_playlist: eff,
+    // compat M1: reflete o assignment PROPRIO do device
+    assigned_playlist_id: own ? own.id : null,
+    assigned_playlist_name: own ? own.name : null,
+    assigned_playlist_version: own ? own.version : null,
+  };
+}
+
 // GET /api/devices
 router.get('/', (req, res) => {
-  const rows = getDb()
-    .prepare(
-      `SELECT d.*,
-              a.playlist_id AS assigned_playlist_id,
-              p.name        AS assigned_playlist_name,
-              p.version     AS assigned_playlist_version
-         FROM devices d
-         LEFT JOIN assignments a
-           ON a.company_id = d.company_id AND a.target_type = 'device' AND a.target_id = d.id
-         LEFT JOIN playlists p ON p.id = a.playlist_id
-        WHERE d.company_id = ?
-        ORDER BY d.id DESC`
-    )
+  const db = getDb();
+  const rows = db
+    .prepare('SELECT * FROM devices WHERE company_id = ? ORDER BY id DESC')
     .all(req.auth.companyId);
-  res.json({ devices: rows.map(publicDevice) });
+  res.json({ devices: rows.map((d) => deviceWithResolution(db, d)) });
 });
 
 // GET /api/devices/:id  (inclui o manifest que o device receberia)
@@ -46,7 +74,7 @@ router.get('/:id', (req, res) => {
   const db = getDb();
   const device = scoped(db, req.params.id, req.auth.companyId);
   if (!device) return res.status(404).json({ error: 'device nao encontrado' });
-  res.json({ device: publicDevice(device), manifest: buildManifest(device) });
+  res.json({ device: deviceWithResolution(db, device), manifest: buildManifest(device) });
 });
 
 // PATCH /api/devices/:id  { name?, status?, player_type?, group_id? }

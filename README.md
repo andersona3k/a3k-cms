@@ -57,11 +57,30 @@ Sem metadados (ffprobe/sharp fica no M2), sem drag-drop (M3), sem grupos (M4).
   em `/vendor/sortablejs/`), duracao editavel inline, modal de preview que
   toca a playlist item a item.
 
+### M4 — Dispositivos a fundo (concluido)
+
+- **Grupos**: CRUD de `device-groups`, mover devices (individual via
+  `PATCH /api/devices/:id {group_id}` ou em lote via
+  `POST /api/device-groups/:id/devices {device_ids}`), `POST/DELETE
+  /api/device-groups/:id/assign` (playlist -> grupo).
+- **Heranca**: device sem assignment proprio toca a playlist do grupo;
+  assignment proprio sobrepoe. `GET /api/devices` expoe `own_playlist`,
+  `effective_playlist {id,name,version,source:'device'|'group'}` e `group_name`.
+- **Add player**: `POST /api/pair/requests {name?,group_id?,player_type?}`
+  gera um codigo curto + as instrucoes de provisionamento do adapter
+  (`GET`/`DELETE /api/pair/requests[/:id]` p/ listar/cancelar/pollar). O player
+  informa o codigo em `POST /api/pair/new {code,...}` e nasce vinculado
+  (nome/grupo/tipo da solicitacao). Sem `code`, o pair continua abrindo um
+  device solto (M1).
+- **Manifest `?p=`**: alem de `?v=`, o player manda `&p=<playlistId>`; o `304`
+  so acontece se a playlist E a versao baterem — troca de playlist (ex: grupo
+  reapontado) e detectada mesmo que o numero da `version` coincida.
+- `/admin/`: card de grupos + "Add player" (modal com codigo, provisionamento
+  e poll ate parear); coluna de grupo e de playlist efetiva por device.
+
 ### Proximos
 
-M4 dispositivos a fundo (grupos, assign-to-grupo, fluxo "Add player" por
-adapter), M5 multiempresa + permissoes (enforcement), M6 day-parting,
-Fase 3 apps nativos.
+M5 multiempresa + permissoes (enforcement), M6 day-parting, Fase 3 apps nativos.
 
 ## Setup
 
@@ -73,7 +92,7 @@ npm run seed              # cria empresa A3K + role admin + usuario admin
 npm start                 # sobe em http://localhost:3000
 ```
 
-`npm run reset` apaga o banco. `npm test` roda os testes de aceite (M0..M3).
+`npm run reset` apaga o banco. `npm test` roda os testes de aceite (M0..M4).
 
 ## API
 
@@ -101,18 +120,24 @@ npm start                 # sobe em http://localhost:3000
 | PUT  | `/api/playlists/:id/items` | `{items:[{asset_id,duration}]}` substitui tudo |
 | PUT  | `/api/playlists/:id/order` | `{item_ids:[...]}` reordena (bumpa version) |
 | DELETE | `/api/playlists/:id/items/:itemId` | remove item (bumpa version) |
-| GET  | `/api/devices` · `/api/devices/:id` | lista / detalhe (+ manifest) |
+| GET  | `/api/devices` · `/api/devices/:id` | lista / detalhe (+ `own_playlist`, `effective_playlist`, manifest) |
 | PATCH | `/api/devices/:id` | `{name?,status?,player_type?,group_id?}` |
-| POST | `/api/devices/:id/assign` | `{playlist_id}` (upsert do assignment) |
-| DELETE | `/api/devices/:id/assign` | desatribui |
+| POST | `/api/devices/:id/assign` | `{playlist_id}` (upsert do assignment do device) |
+| DELETE | `/api/devices/:id/assign` | desatribui (volta a herdar do grupo) |
+| GET  | `/api/device-groups` · POST · PATCH · DELETE | CRUD de grupos |
+| POST | `/api/device-groups/:id/devices` | `{device_ids:[...]}` move devices p/ o grupo |
+| POST · DELETE | `/api/device-groups/:id/assign` | `{playlist_id}` playlist -> grupo |
+| POST | `/api/pair/requests` | `{name?,group_id?,player_type?}` -> `{request:{code},provisioning}` |
+| GET  | `/api/pair/requests[/:id]` | lista / poll (mostra o device quando consumido) |
+| DELETE | `/api/pair/requests/:id` | cancela o codigo |
 
 ### Player (sem JWT — `pair` aberto; manifest/heartbeat via token do device)
 
 | Metodo | Rota | Descricao |
 |--------|------|-----------|
-| POST | `/api/pair/new` | `{hardware_id?,player_type?,name?}` -> `{deviceId,serial,token}` |
-| GET  | `/api/devices/:id/manifest?v=N` | manifest, ou `304` se `v` == versao atual |
-| POST | `/api/devices/:id/heartbeat` | `{playlist_version?,capabilities?}` |
+| POST | `/api/pair/new` | `{hardware_id?,player_type?,name?,code?}` -> `{deviceId,serial,token,claimed}` |
+| GET  | `/api/devices/:id/manifest?v=N&p=PID` | manifest, ou `304` se `v` **e** `p` baterem |
+| POST | `/api/devices/:id/heartbeat` | `{playlist_version?,capabilities?}` -> `{currentVersion,playlistId}` |
 | GET  | `/assets/:file` | download da midia |
 
 ## Testar M1 ponta a ponta
@@ -140,11 +165,11 @@ src/
   db/
     index.js           conexao node:sqlite (WAL, FKs on)
     migrate.js         runner de migrations
-    migrations/        001_init.sql · 002_m1_pairing.sql · 003_m2_library.sql
+    migrations/        001_init · 002_m1_pairing · 003_m2_library · 004_m4_devices
   auth/                password (scrypt) · jwt · middleware · routes
   adapters/            base + tizen/webos/android/windows (stubs) + registry
   lib/
-    ids.js             gerador de serial + token de device
+    ids.js             gerador de serial + token + codigo de pareamento
     company.js         empresa padrao (M1 single-company)
     media.js           storage do multer, hash sha256, dedup
     manifest.js        manifest de device + manifest de playlist (preview)
@@ -154,16 +179,19 @@ src/
     assets.js          upload+probe / filtro por pasta / mover / reprobe / delete
     folders.js         CRUD de pastas + move com anti-ciclo + delete guard
     playlists.js       CRUD + itens + reordenar + patch item + manifest (preview)
-    devices.js         listagem / patch / assign (admin)
-    player.js          pair/new, manifest, heartbeat (device token)
+    devices.js         listagem (+ playlist efetiva) / patch / assign (admin)
+    deviceGroups.js    CRUD de grupos + mover devices + assign playlist->grupo
+    pairing.js         Add player: solicitacoes de pareamento (codigo + provisionamento)
+    player.js          pair/new (com codigo), manifest (?v & ?p), heartbeat
 public/
-  player/index.html    player kiosk (vanilla)
-  admin/index.html     painel: biblioteca+pastas, playlist (drag-drop+preview), devices
+  player/index.html    player kiosk (vanilla) — segue ?p= p/ detectar troca de playlist
+  admin/index.html     painel: biblioteca+pastas, playlist (drag-drop+preview),
+                       grupos, dispositivos, Add player
 node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0.test.js · m1.test.js · m2.test.js · m3.test.js   testes de aceite
+  m0.test.js · m1.test.js · m2.test.js · m3.test.js · m4.test.js   testes de aceite
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -180,6 +208,9 @@ por plataforma. Sem toolchain nativo. `FFPROBE_PATH` no `.env` sobrescreve.
 `hardware_id`/`token`/`last_version` do pareamento).
 `assignments` — aponta uma playlist para um `device` ou `group`; alvo unico por
 `(company_id, target_type, target_id)`. Device sem assignment proprio herda a do
-grupo (resolucao em codigo; heranca de grupo so vale a partir do M4).
+grupo (resolucao em `lib/manifest.js`).
+`pair_requests` (M4) — solicitacoes do fluxo "Add player": `code` unico,
+`name`/`group_id`/`player_type` pre-definidos, `status`
+(`pending`/`consumed`/`expired`/`cancelled`), `device_id`, `expires_at`.
 
 Regra-chave: alterar uma playlist **incrementa `version`** -> dispara re-sync no player.

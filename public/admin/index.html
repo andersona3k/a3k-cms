@@ -47,6 +47,13 @@
   #previewStage img, #previewStage video { width:100%; height:100%; object-fit:contain; }
   #previewBar { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); display:flex; gap:10px; align-items:center;
     background:var(--card); border:1px solid var(--line); border-radius:999px; padding:8px 16px; font-size:13px; }
+  #addPlayerModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
+  .modalBox { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; width:420px; max-width:92vw; }
+  .modalBox label { margin-top:10px; } .modalBox select, .modalBox input { width:100%; }
+  .code { font:800 40px/1 ui-monospace,Menlo,Consolas,monospace; letter-spacing:8px; text-align:center;
+    background:#0d141c; border:1px solid var(--line); border-radius:10px; padding:18px; margin:10px 0; color:#fff; }
+  .src { font-size:11px; padding:1px 6px; border-radius:999px; border:1px solid var(--line); margin-left:6px; }
+  .src.group { color:var(--warn); } .src.device { color:#5fd08a; }
 </style>
 </head>
 <body>
@@ -102,14 +109,47 @@
   </div>
 
   <div class="card">
-    <h2>3 · Dispositivos</h2>
-    <p class="muted">Abra <code id="playerUrl"></code> num monitor/aba. O device aparece aqui apos parear.</p>
-    <button class="ghost" id="devRefreshBtn">atualizar</button>
-    <table id="devTbl"><thead><tr><th>ID</th><th>Serial</th><th>Tipo</th><th>Status</th><th>Ultimo contato</th><th>Playlist</th><th>Ação</th></tr></thead><tbody></tbody></table>
+    <h2>3 · Grupos de dispositivos</h2>
+    <div class="row">
+      <div><label>Novo grupo</label><input id="grpName" placeholder="Loja Centro" /></div>
+      <button id="grpCreateBtn">Criar grupo</button>
+    </div>
+    <table id="grpTbl"><thead><tr><th>Grupo</th><th>Devices</th><th>Playlist do grupo</th><th>Ação</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>4 · Dispositivos</h2>
+    <p class="muted">Abra <code id="playerUrl"></code> num monitor/aba (pareamento aberto), ou use <b>Add player</b> para gerar um codigo com nome/grupo/tipo ja definidos.</p>
+    <div class="row">
+      <button id="addPlayerBtn">Add player</button>
+      <button class="ghost" id="devRefreshBtn">atualizar</button>
+    </div>
+    <table id="devTbl"><thead><tr>
+      <th>ID</th><th>Serial</th><th>Nome</th><th>Tipo</th><th>Status</th><th>Grupo</th><th>Playlist efetiva</th><th>Contato</th><th>Ação</th>
+    </tr></thead><tbody></tbody></table>
   </div>
 
   <div class="card"><h2>Log</h2><div id="log"></div></div>
 </main>
+
+<div id="addPlayerModal" class="hidden">
+  <div class="modalBox">
+    <div class="row" style="justify-content:space-between"><b>Add player</b><button class="ghost" id="apClose">fechar</button></div>
+    <div id="apForm">
+      <label>Tipo de player</label>
+      <select id="apType"><option value="unknown">(indefinido)</option><option value="tizen">Samsung (Tizen)</option><option value="webos">LG (webOS)</option><option value="android">Android</option><option value="windows">Windows</option></select>
+      <label>Nome (opcional)</label><input id="apName" placeholder="TV Recepcao" />
+      <label>Grupo (opcional)</label><select id="apGroup"></select>
+      <div style="margin-top:12px"><button id="apGenerate">Gerar codigo</button></div>
+    </div>
+    <div id="apResult" class="hidden">
+      <p class="muted">No player, informe este codigo (ou aponte o kiosk para <code id="apPlayerUrl"></code> e digite quando pedir):</p>
+      <div class="code" id="apCode">------</div>
+      <div id="apProv" class="muted"></div>
+      <p id="apWait" class="muted">Aguardando o player parear…</p>
+    </div>
+  </div>
+</div>
 
 <div id="infoPanel" class="hidden"></div>
 
@@ -130,7 +170,7 @@
   'use strict';
   var API = location.origin;
   var token = localStorage.getItem('a3k_admin_token') || '';
-  var state = { assets: [], playlists: [], folders: [], activePlaylist: null, currentFolder: '' };
+  var state = { assets: [], playlists: [], folders: [], groups: [], activePlaylist: null, currentFolder: '' };
 
   var $ = function (id) { return document.getElementById(id); };
   function log(m) { $('log').textContent = '[' + new Date().toLocaleTimeString() + '] ' + m + '\n' + $('log').textContent; }
@@ -338,7 +378,6 @@
       });
       if (!state.activePlaylist && d.playlists[0]) state.activePlaylist = d.playlists[0].id;
       if (state.activePlaylist) sel.value = state.activePlaylist;
-      updateDevPlaylistOptions();
       return loadPlaylistItems();
     });
   }
@@ -426,57 +465,156 @@
     clearTimeout(pv.timer); $('previewStage').innerHTML = ''; $('previewModal').classList.add('hidden');
   };
 
-  // ---- devices ----
-  function updateDevPlaylistOptions() {
-    document.querySelectorAll('select[data-devsel]').forEach(function (sel) {
-      var cur = sel.value; sel.innerHTML = '<option value="">—</option>';
-      state.playlists.forEach(function (p) {
-        var o = document.createElement('option'); o.value = p.id; o.textContent = p.name; sel.appendChild(o);
+  // ---- helpers de select de playlist ----
+  function playlistSelect(current) {
+    var s = document.createElement('select');
+    s.innerHTML = '<option value="">— sem playlist</option>';
+    state.playlists.forEach(function (p) {
+      var o = document.createElement('option'); o.value = p.id; o.textContent = p.name; s.appendChild(o);
+    });
+    if (current) s.value = current;
+    return s;
+  }
+  function groupSelect(current) {
+    var s = document.createElement('select');
+    s.innerHTML = '<option value="">— sem grupo</option>';
+    state.groups.forEach(function (g) {
+      var o = document.createElement('option'); o.value = g.id; o.textContent = g.name; s.appendChild(o);
+    });
+    if (current) s.value = current;
+    return s;
+  }
+
+  // ---- grupos ----
+  $('grpCreateBtn').onclick = function () {
+    var name = $('grpName').value.trim(); if (!name) return;
+    jpost('/api/device-groups', { name: name })
+      .then(function () { log('grupo criado'); $('grpName').value = ''; loadGroups().then(loadDevices); })
+      .catch(function (e) { log('grupo: ' + e.message); });
+  };
+  function loadGroups() {
+    return api('/api/device-groups').then(function (d) {
+      state.groups = d.groups;
+      var tb = $('grpTbl').querySelector('tbody'); tb.innerHTML = '';
+      d.groups.forEach(function (g) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + esc(g.name) + '</td><td>' + g.device_count + '</td><td></td><td></td>';
+        var plTd = tr.children[2], actTd = tr.children[3];
+        var sel = playlistSelect(g.assigned_playlist_id);
+        var assignBtn = document.createElement('button'); assignBtn.textContent = 'playlist';
+        plTd.appendChild(sel); plTd.appendChild(assignBtn);
+        assignBtn.onclick = function () {
+          var call = sel.value
+            ? jpost('/api/device-groups/' + g.id + '/assign', { playlist_id: Number(sel.value) })
+            : api('/api/device-groups/' + g.id + '/assign', { method: 'DELETE' });
+          call.then(function () { log('grupo ' + g.name + ' -> playlist ' + (sel.value || '—'));
+            loadGroups(); loadDevices(); }).catch(function (e) { log(e.message); });
+        };
+        var renBtn = document.createElement('button'); renBtn.className = 'ghost'; renBtn.textContent = 'renomear';
+        renBtn.onclick = function () {
+          var n = prompt('Novo nome do grupo', g.name); if (!n) return;
+          jpost('/api/device-groups/' + g.id, { name: n }, 'PATCH')
+            .then(function () { loadGroups().then(loadDevices); }).catch(function (e) { log(e.message); });
+        };
+        var delBtn = document.createElement('button'); delBtn.className = 'danger'; delBtn.textContent = 'apagar';
+        delBtn.onclick = function () {
+          if (!confirm('Apagar o grupo "' + g.name + '"? Os devices ficam sem grupo.')) return;
+          api('/api/device-groups/' + g.id, { method: 'DELETE' })
+            .then(function (r) { log('grupo apagado (' + r.ungrouped_devices + ' devices desagrupados)');
+              loadGroups().then(loadDevices); }).catch(function (e) { log(e.message); });
+        };
+        actTd.appendChild(renBtn); actTd.appendChild(delBtn);
+        tb.appendChild(tr);
       });
-      sel.value = cur;
     });
   }
+
+  // ---- devices ----
   function loadDevices() {
     return api('/api/devices').then(function (d) {
       var tb = $('devTbl').querySelector('tbody'); tb.innerHTML = '';
       d.devices.forEach(function (dev) {
         var tr = document.createElement('tr');
+        var eff = dev.effective_playlist;
+        var effHtml = eff
+          ? esc(eff.name) + ' (v' + eff.version + ')<span class="src ' + eff.source + '">' +
+            (eff.source === 'group' ? 'herdada' : 'propria') + '</span>'
+          : '<span class="muted">nenhuma</span>';
         tr.innerHTML =
-          '<td>' + dev.id + '</td><td><code>' + dev.serial + '</code></td><td>' + dev.player_type +
-          '</td><td><span class="pill">' + dev.status + '</span></td><td class="muted">' + (dev.last_seen || '—') +
-          '</td><td>' + (dev.assigned_playlist_name ? esc(dev.assigned_playlist_name) + ' (v' + dev.assigned_playlist_version + ')' : '<span class="muted">nenhuma</span>') +
-          '</td><td></td>';
-        var actTd = tr.lastChild;
-        var sel = document.createElement('select'); sel.setAttribute('data-devsel', dev.id);
-        var btn = document.createElement('button'); btn.textContent = 'atribuir';
-        actTd.appendChild(sel); actTd.appendChild(btn);
-        btn.onclick = function () {
-          if (!sel.value) {
-            api('/api/devices/' + dev.id + '/assign', { method: 'DELETE' })
-              .then(function () { log('device ' + dev.serial + ' desatribuido'); loadDevices(); });
-            return;
-          }
-          jpost('/api/devices/' + dev.id + '/assign', { playlist_id: Number(sel.value) })
-            .then(function () { log('device ' + dev.serial + ' -> playlist ' + sel.value); loadDevices(); })
-            .catch(function (e) { log('assign: ' + e.message); });
+          '<td>' + dev.id + '</td><td><code>' + dev.serial + '</code></td><td>' + esc(dev.name || '—') +
+          '</td><td>' + dev.player_type + '</td><td><span class="pill">' + dev.status + '</span></td>' +
+          '<td></td><td>' + effHtml + '</td><td class="muted">' + (dev.last_seen || '—') + '</td><td></td>';
+        var grpTd = tr.children[5], actTd = tr.children[8];
+
+        var gsel = groupSelect(dev.group_id);
+        gsel.onchange = function () {
+          jpost('/api/devices/' + dev.id, { group_id: gsel.value ? Number(gsel.value) : null }, 'PATCH')
+            .then(function () { log('device ' + dev.serial + ' grupo=' + (gsel.value || '—'));
+              loadGroups(); loadDevices(); }).catch(function (e) { log(e.message); });
         };
+        grpTd.appendChild(gsel);
+
+        var psel = playlistSelect(dev.own_playlist ? dev.own_playlist.id : '');
+        var pbtn = document.createElement('button'); pbtn.textContent = 'atribuir';
+        pbtn.onclick = function () {
+          var call = psel.value
+            ? jpost('/api/devices/' + dev.id + '/assign', { playlist_id: Number(psel.value) })
+            : api('/api/devices/' + dev.id + '/assign', { method: 'DELETE' });
+          call.then(function () { log('device ' + dev.serial + ' -> playlist ' + (psel.value || '—(herda do grupo)'));
+            loadDevices(); }).catch(function (e) { log('assign: ' + e.message); });
+        };
+        actTd.appendChild(psel); actTd.appendChild(pbtn);
         tb.appendChild(tr);
-        if (dev.assigned_playlist_id) sel.value = dev.assigned_playlist_id;
-      });
-      updateDevPlaylistOptions();
-      document.querySelectorAll('#devTbl select[data-devsel]').forEach(function (sel) {
-        var dev = d.devices.find(function (x) { return String(x.id) === sel.getAttribute('data-devsel'); });
-        if (dev && dev.assigned_playlist_id) sel.value = dev.assigned_playlist_id;
       });
     });
   }
-  $('devRefreshBtn').onclick = loadDevices;
+  $('devRefreshBtn').onclick = function () { loadGroups(); loadDevices(); };
+
+  // ---- Add player ----
+  var apPoll = null;
+  $('addPlayerBtn').onclick = function () {
+    $('apResult').classList.add('hidden'); $('apForm').classList.remove('hidden');
+    $('apPlayerUrl').textContent = API + '/player/';
+    var gsel = $('apGroup'); gsel.innerHTML = '<option value="">— sem grupo</option>';
+    state.groups.forEach(function (g) {
+      var o = document.createElement('option'); o.value = g.id; o.textContent = g.name; gsel.appendChild(o);
+    });
+    $('addPlayerModal').classList.remove('hidden');
+  };
+  $('apClose').onclick = function () { clearInterval(apPoll); $('addPlayerModal').classList.add('hidden'); };
+  $('apGenerate').onclick = function () {
+    var body = { player_type: $('apType').value };
+    if ($('apName').value.trim()) body.name = $('apName').value.trim();
+    if ($('apGroup').value) body.group_id = Number($('apGroup').value);
+    jpost('/api/pair/requests', body).then(function (d) {
+      $('apForm').classList.add('hidden'); $('apResult').classList.remove('hidden');
+      $('apCode').textContent = d.request.code;
+      $('apProv').innerHTML = '<b>' + esc(d.provisioning.type) + '</b> · ' + esc(d.provisioning.method) + '<br>' +
+        (d.provisioning.steps || []).map(esc).join('<br>');
+      $('apWait').textContent = 'Aguardando o player parear…';
+      log('codigo de pareamento ' + d.request.code + ' gerado');
+      clearInterval(apPoll);
+      apPoll = setInterval(function () {
+        api('/api/pair/requests/' + d.request.id).then(function (r) {
+          if (r.request.status === 'consumed') {
+            clearInterval(apPoll);
+            $('apWait').textContent = 'Pareado: ' + (r.request.device ? r.request.device.serial : 'ok') + ' ✓';
+            log('player pareado: ' + (r.request.device ? r.request.device.serial : ''));
+            loadGroups(); loadDevices();
+          } else if (r.request.status !== 'pending') {
+            clearInterval(apPoll); $('apWait').textContent = 'Solicitacao ' + r.request.status;
+          }
+        });
+      }, 3000);
+    }).catch(function (e) { log('add player: ' + e.message); });
+  };
 
   function refreshAll() {
-    loadFolders().then(loadAssets).then(loadPlaylists).then(loadDevices).catch(function (e) {
+    loadFolders().then(loadAssets).then(loadPlaylists).then(loadGroups).then(loadDevices).catch(function (e) {
       if (/HTTP 401|token/.test(e.message)) showApp(false); else log(e.message);
     });
-    if (!window._devPoll) window._devPoll = setInterval(loadDevices, 10000);
+    if (!window._devPoll) window._devPoll = setInterval(function () { loadGroups(); loadDevices(); }, 10000);
   }
 
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {

@@ -74,6 +74,7 @@
   }
 
   var currentVersion = -1;
+  var currentPlaylistId = -1;
   var playlist = [];
   var idx = 0;
   var advanceTimer = null;
@@ -120,7 +121,8 @@
   function auth() { return { authorization: 'Bearer ' + device.token }; }
 
   function fetchManifest() {
-    var url = API + '/api/devices/' + device.id + '/manifest?v=' + currentVersion;
+    var url = API + '/api/devices/' + device.id + '/manifest?v=' + currentVersion +
+      '&p=' + currentPlaylistId;
     return fetch(url, { headers: auth() }).then(function (r) {
       if (r.status === 304) return null;
       if (r.status === 401 || r.status === 403) {
@@ -135,7 +137,10 @@
 
   function applyManifest(m) {
     if (!m) return;
+    var playlistChanged = currentPlaylistId !== (m.playlist ? m.playlist.id : 0);
     currentVersion = m.version;
+    currentPlaylistId = m.playlist ? m.playlist.id : 0;
+    if (playlistChanged) idx = 0;
     playlist = (m.items || []).slice();
     badge.textContent =
       device.serial + ' · v' + m.version + ' · ' + playlist.length + ' item(s)';

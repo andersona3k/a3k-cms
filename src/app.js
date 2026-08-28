@@ -12,6 +12,8 @@ const assetsRoutes = require('./routes/assets');
 const foldersRoutes = require('./routes/folders');
 const playlistsRoutes = require('./routes/playlists');
 const devicesRoutes = require('./routes/devices');
+const deviceGroupsRoutes = require('./routes/deviceGroups');
+const pairingRoutes = require('./routes/pairing');
 const playerRoutes = require('./routes/player');
 
 function createApp() {
@@ -21,7 +23,7 @@ function createApp() {
 
   // Health — sem auth.
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M3' });
+    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M4' });
   });
 
   // Auth.
@@ -32,6 +34,9 @@ function createApp() {
     res.json({ player_types: PLAYER_TYPES, adapters: listAdapters() });
   });
 
+  // Add player (JWT) — antes do playerRoutes p/ nao colidir com /api/pair/new.
+  app.use('/api/pair/requests', pairingRoutes);
+
   // Player (sem JWT: pair aberto, manifest/heartbeat via token do device).
   // Registrado ANTES do router admin de /api/devices para que
   // /api/devices/:id/manifest nao caia no requireAuth do painel.
@@ -41,6 +46,7 @@ function createApp() {
   app.use('/api/assets', assetsRoutes);
   app.use('/api/folders', foldersRoutes);
   app.use('/api/playlists', playlistsRoutes);
+  app.use('/api/device-groups', deviceGroupsRoutes);
   app.use('/api/devices', devicesRoutes);
 
   // Download de midia.
@@ -65,7 +71,7 @@ function createApp() {
 
   app.get('/', (req, res) => {
     res.type('text/plain').send(
-      `${pkg.name} v${pkg.version} — M3 (playlist UX)\n\n` +
+      `${pkg.name} v${pkg.version} — M4 (dispositivos)\n\n` +
         `player kiosk : /player/\n` +
         `admin        : /admin/\n` +
         `health       : /api/health\n`

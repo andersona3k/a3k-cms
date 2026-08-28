@@ -18,4 +18,11 @@ function newToken() {
   return crypto.randomBytes(24).toString('hex');
 }
 
-module.exports = { newSerial, newToken };
+// Codigo de pareamento (fluxo "Add player"): curto, digitavel, sem ambiguidade.
+function newPairCode() {
+  let s = '';
+  for (let i = 0; i < 6; i++) s += ALPHABET[crypto.randomInt(ALPHABET.length)];
+  return s;
+}
+
+module.exports = { newSerial, newToken, newPairCode };
