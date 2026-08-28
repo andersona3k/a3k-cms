@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A3K CMS — Admin (M1)</title>
+<style>
+  :root { --bg:#0f151c; --card:#161f2a; --line:#25333f; --fg:#e6edf3; --mut:#8fa3b5; --acc:#3b82f6; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui,sans-serif; }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; gap:16px; align-items:center; }
+  header b { font-size:16px; }
+  main { max-width:1000px; margin:0 auto; padding:20px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .card h2 { margin:0 0 12px; font-size:14px; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); }
+  label { display:block; font-size:12px; color:var(--mut); margin:8px 0 3px; }
+  input, select, button { font:inherit; padding:8px 10px; border-radius:7px; border:1px solid var(--line);
+    background:#0d141c; color:var(--fg); }
+  button { background:var(--acc); border-color:var(--acc); color:#fff; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--fg); }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:end; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); font-size:13px; }
+  th { color:var(--mut); font-weight:600; }
+  .pill { font-size:11px; padding:2px 7px; border-radius:999px; background:#0d141c; border:1px solid var(--line); }
+  .muted { color:var(--mut); }
+  #log { white-space:pre-wrap; font:12px/1.4 ui-monospace,monospace; color:var(--mut);
+    max-height:140px; overflow:auto; background:#0d141c; border:1px solid var(--line); border-radius:7px; padding:8px; }
+  #loginView { max-width:360px; margin:60px auto; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <b>A3K CMS</b><span class="muted">M1 — fatia vertical</span>
+  <span style="flex:1"></span>
+  <span id="who" class="muted"></span>
+  <button class="ghost" id="logoutBtn">sair</button>
+</header>
+
+<div id="loginView" class="card">
+  <h2>Login</h2>
+  <label>E-mail</label><input id="email" value="admin@a3k.local" />
+  <label>Senha</label><input id="password" type="password" value="admin123" />
+  <div style="margin-top:12px"><button id="loginBtn">Entrar</button></div>
+  <p class="muted" id="loginErr"></p>
+</div>
+
+<main id="appView" class="hidden">
+  <div class="card">
+    <h2>1 · Biblioteca — upload</h2>
+    <div class="row">
+      <div><label>Arquivo (imagem ou video)</label><input type="file" id="file" /></div>
+      <button id="uploadBtn">Enviar</button>
+    </div>
+    <table id="assetsTbl"><thead><tr><th>ID</th><th>Arquivo</th><th>Tipo</th><th>Tamanho</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>2 · Playlist</h2>
+    <div class="row">
+      <div><label>Nova playlist</label><input id="plName" placeholder="Vitrine" /></div>
+      <button id="plCreateBtn">Criar</button>
+      <div><label>Playlist ativa</label>
+        <select id="plSelect"></select></div>
+      <div><label>Asset</label><select id="plAsset"></select></div>
+      <div><label>Duracao (s)</label><input id="plDur" type="number" value="10" style="width:80px" /></div>
+      <button id="plAddBtn">Adicionar item</button>
+    </div>
+    <table id="plItemsTbl"><thead><tr><th>Ordem</th><th>Asset</th><th>Tipo</th><th>Dur</th><th></th></tr></thead><tbody></tbody></table>
+    <p class="muted" id="plVersion"></p>
+  </div>
+
+  <div class="card">
+    <h2>3 · Dispositivos</h2>
+    <p class="muted">Abra <code id="playerUrl"></code> num monitor/aba. O device aparece aqui apos parear.</p>
+    <button class="ghost" id="devRefreshBtn">atualizar</button>
+    <table id="devTbl"><thead><tr><th>ID</th><th>Serial</th><th>Tipo</th><th>Status</th><th>Ultimo contato</th><th>Playlist</th><th>Ação</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card"><h2>Log</h2><div id="log"></div></div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var API = location.origin;
+  var token = localStorage.getItem('a3k_admin_token') || '';
+  var state = { assets: [], playlists: [], activePlaylist: null };
+
+  var $ = function (id) { return document.getElementById(id); };
+  function log(m) { $('log').textContent = '[' + new Date().toLocaleTimeString() + '] ' + m + '\n' + $('log').textContent; }
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({}, opts.headers || {}, token ? { authorization: 'Bearer ' + token } : {});
+    return fetch(API + path, opts).then(function (r) {
+      return r.text().then(function (t) {
+        var body = t ? JSON.parse(t) : {};
+        if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+        return body;
+      });
+    });
+  }
+
+  // ---- auth ----
+  function showApp(show) {
+    $('appView').classList.toggle('hidden', !show);
+    $('loginView').classList.toggle('hidden', show);
+    if (show) { $('playerUrl').textContent = API + '/player/'; refreshAll(); }
+  }
+  $('loginBtn').onclick = function () {
+    api('/api/auth/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: $('email').value, password: $('password').value }),
+    }).then(function (d) {
+      token = d.token; localStorage.setItem('a3k_admin_token', token);
+      $('who').textContent = d.user.email; showApp(true);
+    }).catch(function (e) { $('loginErr').textContent = e.message; });
+  };
+  $('logoutBtn').onclick = function () { token = ''; localStorage.removeItem('a3k_admin_token'); showApp(false); };
+
+  // ---- assets ----
+  $('uploadBtn').onclick = function () {
+    var f = $('file').files[0];
+    if (!f) return log('escolha um arquivo');
+    var fd = new FormData(); fd.append('file', f);
+    $('uploadBtn').disabled = true;
+    api('/api/assets', { method: 'POST', body: fd })
+      .then(function (d) { log('asset #' + d.asset.id + ' ' + (d.deduped ? '(dedup)' : 'enviado')); loadAssets(); })
+      .catch(function (e) { log('upload: ' + e.message); })
+      .finally(function () { $('uploadBtn').disabled = false; });
+  };
+  function loadAssets() {
+    return api('/api/assets').then(function (d) {
+      state.assets = d.assets;
+      var tb = $('assetsTbl').querySelector('tbody'); tb.innerHTML = '';
+      var sel = $('plAsset'); sel.innerHTML = '';
+      d.assets.forEach(function (a) {
+        tb.insertAdjacentHTML('beforeend',
+          '<tr><td>' + a.id + '</td><td>' + esc(a.filename) + '</td><td>' + a.type +
+          '</td><td>' + fmtBytes(a.size_bytes) + '</td></tr>');
+        var o = document.createElement('option'); o.value = a.id; o.textContent = '#' + a.id + ' ' + a.filename;
+        sel.appendChild(o);
+      });
+    });
+  }
+
+  // ---- playlists ----
+  $('plCreateBtn').onclick = function () {
+    var name = $('plName').value.trim(); if (!name) return;
+    api('/api/playlists', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: name }) })
+      .then(function (d) { log('playlist #' + d.playlist.id + ' criada'); $('plName').value = '';
+        state.activePlaylist = d.playlist.id; return loadPlaylists(); })
+      .catch(function (e) { log('playlist: ' + e.message); });
+  };
+  $('plSelect').onchange = function () { state.activePlaylist = Number(this.value); loadPlaylistItems(); };
+  $('plAddBtn').onclick = function () {
+    if (!state.activePlaylist) return log('crie/selecione uma playlist');
+    api('/api/playlists/' + state.activePlaylist + '/items', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ asset_id: Number($('plAsset').value), duration: Number($('plDur').value) }),
+    }).then(function (d) { log('item add, playlist v' + d.version); loadPlaylistItems(); })
+      .catch(function (e) { log('item: ' + e.message); });
+  };
+  function loadPlaylists() {
+    return api('/api/playlists').then(function (d) {
+      state.playlists = d.playlists;
+      var sel = $('plSelect'); sel.innerHTML = '';
+      d.playlists.forEach(function (p) {
+        var o = document.createElement('option'); o.value = p.id;
+        o.textContent = p.name + ' (v' + p.version + ', ' + p.item_count + ' itens)';
+        sel.appendChild(o);
+      });
+      if (!state.activePlaylist && d.playlists[0]) state.activePlaylist = d.playlists[0].id;
+      if (state.activePlaylist) sel.value = state.activePlaylist;
+      updateDevPlaylistOptions();
+      return loadPlaylistItems();
+    });
+  }
+  function loadPlaylistItems() {
+    if (!state.activePlaylist) { $('plItemsTbl').querySelector('tbody').innerHTML = ''; return Promise.resolve(); }
+    return api('/api/playlists/' + state.activePlaylist).then(function (d) {
+      var tb = $('plItemsTbl').querySelector('tbody'); tb.innerHTML = '';
+      d.items.forEach(function (it) {
+        tb.insertAdjacentHTML('beforeend',
+          '<tr><td>' + it.ordem + '</td><td>' + esc(it.filename) + '</td><td>' + it.type +
+          '</td><td>' + it.duration + 's</td><td><button class="ghost" data-del="' + it.id + '">remover</button></td></tr>');
+      });
+      tb.querySelectorAll('[data-del]').forEach(function (b) {
+        b.onclick = function () {
+          api('/api/playlists/' + state.activePlaylist + '/items/' + b.dataset.del, { method: 'DELETE' })
+            .then(function (d) { log('item removido, v' + d.version); loadPlaylistItems(); loadPlaylists(); });
+        };
+      });
+      $('plVersion').textContent = 'playlist "' + d.playlist.name + '" — versao ' + d.playlist.version;
+    });
+  }
+
+  // ---- devices ----
+  function updateDevPlaylistOptions() {
+    document.querySelectorAll('select[data-devsel]').forEach(function (sel) {
+      var cur = sel.value; sel.innerHTML = '<option value="">—</option>';
+      state.playlists.forEach(function (p) {
+        var o = document.createElement('option'); o.value = p.id; o.textContent = p.name;
+        sel.appendChild(o);
+      });
+      sel.value = cur;
+    });
+  }
+  function loadDevices() {
+    return api('/api/devices').then(function (d) {
+      var tb = $('devTbl').querySelector('tbody'); tb.innerHTML = '';
+      d.devices.forEach(function (dev) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + dev.id + '</td><td><code>' + dev.serial + '</code></td><td>' + dev.player_type +
+          '</td><td><span class="pill">' + dev.status + '</span></td><td class="muted">' + (dev.last_seen || '—') +
+          '</td><td>' + (dev.assigned_playlist_name ? esc(dev.assigned_playlist_name) + ' (v' + dev.assigned_playlist_version + ')' : '<span class="muted">nenhuma</span>') +
+          '</td><td></td>';
+        var actTd = tr.lastChild;
+        var sel = document.createElement('select'); sel.setAttribute('data-devsel', dev.id);
+        var btn = document.createElement('button'); btn.textContent = 'atribuir';
+        actTd.appendChild(sel); actTd.appendChild(btn);
+        btn.onclick = function () {
+          if (!sel.value) {
+            api('/api/devices/' + dev.id + '/assign', { method: 'DELETE' })
+              .then(function () { log('device ' + dev.serial + ' desatribuido'); loadDevices(); });
+            return;
+          }
+          api('/api/devices/' + dev.id + '/assign', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ playlist_id: Number(sel.value) }),
+          }).then(function () { log('device ' + dev.serial + ' -> playlist ' + sel.value); loadDevices(); })
+            .catch(function (e) { log('assign: ' + e.message); });
+        };
+        tb.appendChild(tr);
+        if (dev.assigned_playlist_id) sel.value = dev.assigned_playlist_id;
+      });
+      updateDevPlaylistOptions();
+      document.querySelectorAll('#devTbl select[data-devsel]').forEach(function (sel) {
+        var dev = d.devices.find(function (x) { return String(x.id) === sel.getAttribute('data-devsel'); });
+        if (dev && dev.assigned_playlist_id) sel.value = dev.assigned_playlist_id;
+      });
+    });
+  }
+  $('devRefreshBtn').onclick = loadDevices;
+
+  function refreshAll() {
+    loadAssets().then(loadPlaylists).then(loadDevices).catch(function (e) {
+      if (/HTTP 401|token/.test(e.message)) showApp(false); else log(e.message);
+    });
+    if (!window._devPoll) window._devPoll = setInterval(loadDevices, 10000);
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function fmtBytes(n) { if (!n) return '—'; var u = ['B','KB','MB','GB']; var i = 0;
+    while (n >= 1024 && i < 3) { n /= 1024; i++; } return n.toFixed(1) + ' ' + u[i]; }
+
+  if (token) { $('who').textContent = '(sessao salva)'; showApp(true); } else { showApp(false); }
+})();
+</script>
+</body>
+</html>

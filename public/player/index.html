@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>A3K Player</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #stage img, #stage video {
+    max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain;
+  }
+  #status {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    color: #cfd8e3; font: 16px/1.4 system-ui, sans-serif; text-align: center; padding: 24px;
+  }
+  #status .serial {
+    font: 700 34px/1 ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing: 3px; color: #fff; background: #111a24;
+    border: 1px solid #24384a; border-radius: 12px; padding: 16px 24px;
+  }
+  #status small { color: #6b7d8f; }
+  .hidden { display: none !important; }
+  #badge {
+    position: fixed; right: 8px; bottom: 6px; color: #33465a;
+    font: 11px/1 ui-monospace, monospace; z-index: 10;
+  }
+</style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="status">
+    <div>A3K Digital Signage</div>
+    <div class="serial" id="serial">…</div>
+    <div id="statusMsg">Pareando…</div>
+    <small id="statusHint"></small>
+  </div>
+  <div id="badge"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var API = location.origin;
+  var POLL_MS = 15000;
+  var HEARTBEAT_MS = 60000;
+
+  var LS = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  };
+
+  var stage = document.getElementById('stage');
+  var statusEl = document.getElementById('status');
+  var serialEl = document.getElementById('serial');
+  var statusMsg = document.getElementById('statusMsg');
+  var statusHint = document.getElementById('statusHint');
+  var badge = document.getElementById('badge');
+
+  var device = {
+    id: LS.get('a3k_device_id'),
+    token: LS.get('a3k_token'),
+    serial: LS.get('a3k_serial'),
+    hardwareId: LS.get('a3k_hw') || null,
+  };
+
+  if (!device.hardwareId) {
+    device.hardwareId =
+      (self.crypto && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : 'hw-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    LS.set('a3k_hw', device.hardwareId);
+  }
+
+  var currentVersion = -1;
+  var playlist = [];
+  var idx = 0;
+  var advanceTimer = null;
+
+  function detectPlayerType() {
+    var ua = navigator.userAgent;
+    if (/Tizen/i.test(ua)) return 'tizen';
+    if (/Web0S|webOS|LG Browser/i.test(ua)) return 'webos';
+    if (/Android/i.test(ua)) return 'android';
+    if (/Windows/i.test(ua)) return 'windows';
+    return 'unknown';
+  }
+
+  function setStatus(msg, hint) {
+    statusMsg.textContent = msg || '';
+    statusHint.textContent = hint || '';
+  }
+  function showStatus(show) { statusEl.classList.toggle('hidden', !show); }
+
+  function pair() {
+    setStatus('Pareando…');
+    return fetch(API + '/api/pair/new', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        hardware_id: device.hardwareId,
+        player_type: detectPlayerType(),
+        name: null,
+      }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.token) throw new Error('pair falhou');
+        device.id = String(d.deviceId);
+        device.token = d.token;
+        device.serial = d.serial;
+        LS.set('a3k_device_id', device.id);
+        LS.set('a3k_token', device.token);
+        LS.set('a3k_serial', device.serial);
+        serialEl.textContent = device.serial;
+      });
+  }
+
+  function auth() { return { authorization: 'Bearer ' + device.token }; }
+
+  function fetchManifest() {
+    var url = API + '/api/devices/' + device.id + '/manifest?v=' + currentVersion;
+    return fetch(url, { headers: auth() }).then(function (r) {
+      if (r.status === 304) return null;
+      if (r.status === 401 || r.status === 403) {
+        // token perdeu a validade — reparear.
+        device.token = null;
+        return pair().then(function () { return null; });
+      }
+      if (!r.ok) throw new Error('manifest HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function applyManifest(m) {
+    if (!m) return;
+    currentVersion = m.version;
+    playlist = (m.items || []).slice();
+    badge.textContent =
+      device.serial + ' · v' + m.version + ' · ' + playlist.length + ' item(s)';
+
+    if (!playlist.length) {
+      showStatus(true);
+      setStatus(
+        m.playlist ? 'Playlist "' + m.playlist.name + '" sem itens' : 'Aguardando conteudo',
+        'Serial: ' + device.serial
+      );
+      clearTimeout(advanceTimer);
+      stage.innerHTML = '';
+      return;
+    }
+    showStatus(false);
+    idx = idx % playlist.length;
+    render();
+  }
+
+  function render() {
+    clearTimeout(advanceTimer);
+    if (!playlist.length) return;
+    var item = playlist[idx];
+    var dur = (item.duration || 10) * 1000;
+    stage.innerHTML = '';
+
+    if (item.type === 'video') {
+      var v = document.createElement('video');
+      v.src = API + item.url;
+      v.autoplay = true; v.muted = true; v.playsInline = true; v.controls = false;
+      v.onended = next;
+      v.onerror = function () { advanceTimer = setTimeout(next, 3000); };
+      stage.appendChild(v);
+      v.play().catch(function () {});
+      // teto de seguranca caso o video nao dispare onended
+      advanceTimer = setTimeout(next, Math.max(dur, 60000));
+    } else if (item.type === 'image' || item.type === 'other' || item.type === 'html') {
+      var img = document.createElement('img');
+      img.src = API + item.url;
+      img.onerror = function () { advanceTimer = setTimeout(next, 3000); };
+      stage.appendChild(img);
+      advanceTimer = setTimeout(next, dur);
+    } else {
+      advanceTimer = setTimeout(next, dur);
+    }
+  }
+
+  function next() {
+    idx = (idx + 1) % playlist.length;
+    render();
+  }
+
+  function heartbeat() {
+    if (!device.token) return;
+    fetch(API + '/api/devices/' + device.id + '/heartbeat', {
+      method: 'POST',
+      headers: Object.assign({ 'content-type': 'application/json' }, auth()),
+      body: JSON.stringify({
+        playlist_version: currentVersion < 0 ? 0 : currentVersion,
+        capabilities: { userAgent: navigator.userAgent, screen: [screen.width, screen.height] },
+      }),
+    }).catch(function () {});
+  }
+
+  function poll() {
+    fetchManifest().then(applyManifest).catch(function (e) {
+      badge.textContent = 'erro: ' + e.message;
+    });
+  }
+
+  function start() {
+    serialEl.textContent = device.serial || '…';
+    var ready = device.id && device.token
+      ? Promise.resolve()
+      : pair();
+
+    ready
+      .then(function () {
+        poll();
+        heartbeat();
+        setInterval(poll, POLL_MS);
+        setInterval(heartbeat, HEARTBEAT_MS);
+      })
+      .catch(function (e) {
+        setStatus('Falha ao parear', String(e.message || e));
+        setTimeout(start, 5000);
+      });
+  }
+
+  start();
+})();
+</script>
+</body>
+</html>

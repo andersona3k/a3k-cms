@@ -1,10 +1,17 @@
 'use strict';
 
+const path = require('path');
 const express = require('express');
 const pkg = require('../package.json');
+const config = require('./config');
 const authRoutes = require('./auth/routes');
 const { requireAuth } = require('./auth/middleware');
 const { listAdapters, PLAYER_TYPES } = require('./adapters');
+
+const assetsRoutes = require('./routes/assets');
+const playlistsRoutes = require('./routes/playlists');
+const devicesRoutes = require('./routes/devices');
+const playerRoutes = require('./routes/player');
 
 function createApp() {
   const app = express();
@@ -13,31 +20,52 @@ function createApp() {
 
   // Health — sem auth.
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M0' });
+    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M1' });
   });
 
   // Auth.
   app.use('/api/auth', authRoutes);
 
-  // Adapters de player (stubs do M0) — exige admin autenticado.
+  // Adapters de player (stubs) — exige admin autenticado.
   app.get('/api/adapters', requireAuth, (req, res) => {
     res.json({ player_types: PLAYER_TYPES, adapters: listAdapters() });
   });
 
-  // Raiz informativa.
+  // Player (sem JWT: pair aberto, manifest/heartbeat via token do device).
+  // Registrado ANTES do router admin de /api/devices para que
+  // /api/devices/:id/manifest nao caia no requireAuth do painel.
+  app.use('/api', playerRoutes);
+
+  // Admin (JWT).
+  app.use('/api/assets', assetsRoutes);
+  app.use('/api/playlists', playlistsRoutes);
+  app.use('/api/devices', devicesRoutes);
+
+  // Download de midia.
+  app.use(
+    '/assets',
+    express.static(config.mediaDir, {
+      index: false,
+      setHeaders: (res) => res.set('Cache-Control', 'public, max-age=31536000, immutable'),
+    })
+  );
+
+  // Player web (kiosk) e mini painel admin — HTML estatico; a autenticacao real
+  // acontece nas chamadas /api que cada pagina faz.
+  app.use('/player', express.static(path.join(__dirname, '..', 'public', 'player')));
+  app.use('/admin', express.static(path.join(__dirname, '..', 'public', 'admin')));
+
   app.get('/', (req, res) => {
     res.type('text/plain').send(
-      `${pkg.name} v${pkg.version} — M0 (Fundacao)\n` +
-        `GET /api/health | POST /api/auth/login | GET /api/auth/me | GET /api/adapters\n`
+      `${pkg.name} v${pkg.version} — M1 (fatia vertical)\n\n` +
+        `player kiosk : /player/\n` +
+        `admin        : /admin/\n` +
+        `health       : /api/health\n`
     );
   });
 
-  // 404.
-  app.use((req, res) => {
-    res.status(404).json({ error: 'nao encontrado' });
-  });
+  app.use((req, res) => res.status(404).json({ error: 'nao encontrado' }));
 
-  // Handler de erro.
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     console.error('[erro]', err);

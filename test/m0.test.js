@@ -104,7 +104,7 @@ test('GET /api/health responde ok', async () => {
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.ok, true);
-  assert.equal(body.milestone, 'M0');
+  assert.equal(body.service, 'a3k-cms');
 });
 
 test('login com credenciais corretas devolve token', async () => {
