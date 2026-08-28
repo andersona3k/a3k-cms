@@ -154,17 +154,23 @@ router.post('/devices/:id/heartbeat', requireDevice, (req, res) => {
   const db = getDb();
   const caps = req.body && req.body.capabilities;
   const appliedV = req.body && req.body.playlist_version;
+  const appliedNum = appliedV != null ? Number(appliedV) : null;
   db.prepare(
     `UPDATE devices
         SET last_seen = datetime('now'),
             status = CASE WHEN status = 'disabled' THEN status ELSE 'active' END,
             capabilities = COALESCE(?, capabilities),
             last_version = COALESCE(?, last_version),
+            last_version_at = CASE
+              WHEN ? IS NOT NULL AND ? <> COALESCE(last_version, -1)
+              THEN datetime('now') ELSE last_version_at END,
             updated_at = datetime('now')
       WHERE id = ?`
   ).run(
     caps != null ? JSON.stringify(caps) : null,
-    appliedV != null ? Number(appliedV) : null,
+    appliedNum,
+    appliedNum,
+    appliedNum,
     req.device.id
   );
 

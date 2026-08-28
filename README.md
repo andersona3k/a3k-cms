@@ -260,16 +260,21 @@ public/
                        em localStorage e no hash da URL (#pane-playlist etc.); a aba
                        Administracao so aparece com permissao roles/users:manage.
                        Aba Dispositivos = tela cheia, visao unificada grupo+players:
-                       cada grupo e uma linha-mae (playlist do grupo, renomear, apagar)
-                       e os players entram nas linhas abaixo. Tipo = icone da
-                       plataforma; Status online/offline pelo last_seen (<3min);
-                       linha verde = online, vermelha = offline. "+ Grupo" / "+ Dispositivo"
-                       na barra de acoes.
+                       cada grupo e uma linha-mae (playlist atual + "Salvar",
+                       renomear, apagar) e os players entram nas linhas abaixo.
+                       Colunas: ID · Nome (bolinha verde/vermelha ANTES do nome =
+                       online/offline pelo last_seen <3min) · Tipo (icone da
+                       plataforma) · Playlist efetiva · Atualizacao (barra de % +
+                       data) · Contato · Acao (editar/apagar). Clicar na linha /
+                       "editar" abre #devModal: serial, hw, capacidades, versao
+                       alvo x versao no player, mover de grupo + playlist propria
+                       com "Salvar", e as ultimas 5 mudancas (activity_log) com
+                       o e-mail de quem fez. "+ Grupo" / "+ Dispositivo" na toolbar.
 node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m6.test.js   testes de aceite (94 no total)
+  m0..m10.test.js  testes de aceite (121 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -283,7 +288,12 @@ por plataforma. Sem toolchain nativo. `FFPROBE_PATH` no `.env` sobrescreve.
 `assets` ganhou `format`, `metadata` (dump cru do probe), `probe_status`
 (`pending`/`ok`/`error`/`skipped`) e `probe_error` no M2.
 `device_groups`, `devices` (`serial` unico, `player_type`, `capabilities` JSON,
-`hardware_id`/`token`/`last_version` do pareamento).
+`hardware_id`/`token`/`last_version` do pareamento; `last_version_at` = quando o
+heartbeat confirmou uma versao nova, migration 008).
+`activity_log` (008) — trilha de auditoria: uma linha por mudanca de `device`/
+`group` (`action` `assign`/`group`/`rename`/`status`, `detail` legivel,
+`actor_user_id`/`actor_email`). `GET /api/devices/:id/activity?limit=5` mescla
+device + grupo. Escrito por `src/lib/activity.js` (best-effort, nunca quebra a rota).
 `assignments` — aponta uma playlist para um `device` ou `group`; alvo unico por
 `(company_id, target_type, target_id)`. Device sem assignment proprio herda a do
 grupo (resolucao em `lib/manifest.js`).

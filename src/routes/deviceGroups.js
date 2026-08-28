@@ -3,6 +3,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const { requireAuth, writeGuard } = require('../auth/middleware');
+const { logActivity } = require('../lib/activity');
 
 const router = express.Router();
 router.use(requireAuth, writeGuard('groups:write'));
@@ -72,6 +73,12 @@ router.patch('/:id', (req, res) => {
     }
     throw err;
   }
+  if (name !== group.name) {
+    logActivity(db, {
+      companyId: req.auth.companyId, targetType: 'group', targetId: group.id, action: 'rename',
+      detail: `grupo "${group.name}" -> "${name}"`, actor: req.auth,
+    });
+  }
   res.json({ group: scoped(db, group.id, req.auth.companyId) });
 });
 
@@ -129,6 +136,12 @@ router.post('/:id/devices', (req, res) => {
     db.exec('ROLLBACK');
     throw err;
   }
+  ids.forEach((id) => {
+    logActivity(db, {
+      companyId: req.auth.companyId, targetType: 'device', targetId: id, action: 'group',
+      detail: `movido para o grupo "${group.name}"`, actor: req.auth,
+    });
+  });
   res.json({ ok: true, moved: valid.length });
 });
 
@@ -140,7 +153,7 @@ router.post('/:id/assign', (req, res) => {
 
   const playlistId = Number(req.body && req.body.playlist_id);
   const playlist = db
-    .prepare('SELECT id FROM playlists WHERE id = ? AND company_id = ?')
+    .prepare('SELECT id, name, version FROM playlists WHERE id = ? AND company_id = ?')
     .get(playlistId, req.auth.companyId);
   if (!playlist) return res.status(400).json({ error: 'playlist_id invalido' });
 
@@ -150,6 +163,12 @@ router.post('/:id/assign', (req, res) => {
      ON CONFLICT (company_id, target_type, target_id)
      DO UPDATE SET playlist_id = excluded.playlist_id, updated_at = datetime('now')`
   ).run(req.auth.companyId, playlistId, group.id);
+
+  logActivity(db, {
+    companyId: req.auth.companyId, targetType: 'group', targetId: group.id, action: 'assign',
+    detail: `grupo "${group.name}": playlist -> "${playlist.name}" (v${playlist.version})`,
+    actor: req.auth,
+  });
 
   res.json({ ok: true });
 });
@@ -162,6 +181,10 @@ router.delete('/:id/assign', (req, res) => {
   db.prepare(
     `DELETE FROM assignments WHERE company_id = ? AND target_type = 'group' AND target_id = ?`
   ).run(req.auth.companyId, group.id);
+  logActivity(db, {
+    companyId: req.auth.companyId, targetType: 'group', targetId: group.id, action: 'assign',
+    detail: `grupo "${group.name}": playlist removida`, actor: req.auth,
+  });
   res.json({ ok: true });
 });
 

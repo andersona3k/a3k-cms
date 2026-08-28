@@ -5,6 +5,13 @@ const { getDb } = require('../db');
 const { requireAuth, writeGuard } = require('../auth/middleware');
 const { PLAYER_TYPES } = require('../adapters');
 const { buildManifest } = require('../lib/manifest');
+const { logActivity, recentForDevice } = require('../lib/activity');
+
+function groupName(db, id) {
+  if (!id) return null;
+  const r = db.prepare('SELECT name FROM device_groups WHERE id = ?').get(id);
+  return r ? r.name : ('#' + id);
+}
 
 const router = express.Router();
 router.use(requireAuth, writeGuard('devices:write'));
@@ -99,12 +106,34 @@ router.patch('/:id', (req, res) => {
     }
     sets.push('player_type = ?'); vals.push(b.player_type);
   }
-  if (b.group_id !== undefined) { sets.push('group_id = ?'); vals.push(b.group_id || null); }
+  const newGroup = b.group_id !== undefined ? (b.group_id || null) : undefined;
+  if (newGroup !== undefined) { sets.push('group_id = ?'); vals.push(newGroup); }
 
   if (!sets.length) return res.status(400).json({ error: 'nada para atualizar' });
   sets.push(`updated_at = datetime('now')`);
   vals.push(device.id);
   db.prepare(`UPDATE devices SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+
+  const label = device.name || device.serial;
+  if (newGroup !== undefined && Number(newGroup) !== Number(device.group_id || 0)) {
+    logActivity(db, {
+      companyId: req.auth.companyId, targetType: 'device', targetId: device.id, action: 'group',
+      detail: `${label}: grupo ${groupName(db, device.group_id) || '—'} -> ${groupName(db, newGroup) || '—'}`,
+      actor: req.auth,
+    });
+  }
+  if (b.name !== undefined && b.name !== device.name) {
+    logActivity(db, {
+      companyId: req.auth.companyId, targetType: 'device', targetId: device.id, action: 'rename',
+      detail: `renomeado "${device.name || '—'}" -> "${b.name || '—'}"`, actor: req.auth,
+    });
+  }
+  if (b.status !== undefined && b.status !== device.status) {
+    logActivity(db, {
+      companyId: req.auth.companyId, targetType: 'device', targetId: device.id, action: 'status',
+      detail: `${label}: status ${device.status} -> ${b.status}`, actor: req.auth,
+    });
+  }
   res.json({ device: publicDevice(scoped(db, device.id, req.auth.companyId)) });
 });
 
@@ -127,6 +156,12 @@ router.post('/:id/assign', (req, res) => {
      DO UPDATE SET playlist_id = excluded.playlist_id, updated_at = datetime('now')`
   ).run(req.auth.companyId, playlistId, device.id);
 
+  logActivity(db, {
+    companyId: req.auth.companyId, targetType: 'device', targetId: device.id, action: 'assign',
+    detail: `${device.name || device.serial}: playlist propria -> "${playlist.name}" (v${playlist.version})`,
+    actor: req.auth,
+  });
+
   res.json({ ok: true, manifest: buildManifest(device) });
 });
 
@@ -138,7 +173,27 @@ router.delete('/:id/assign', (req, res) => {
   db.prepare(
     `DELETE FROM assignments WHERE company_id = ? AND target_type = 'device' AND target_id = ?`
   ).run(req.auth.companyId, device.id);
+  logActivity(db, {
+    companyId: req.auth.companyId, targetType: 'device', targetId: device.id, action: 'assign',
+    detail: `${device.name || device.serial}: playlist propria removida (volta a herdar do grupo)`,
+    actor: req.auth,
+  });
   res.json({ ok: true });
+});
+
+// GET /api/devices/:id/activity?limit=5  — historico do device + do grupo dele
+router.get('/:id/activity', (req, res) => {
+  const db = getDb();
+  const device = scoped(db, req.params.id, req.auth.companyId);
+  if (!device) return res.status(404).json({ error: 'device nao encontrado' });
+  res.json({
+    activity: recentForDevice(db, {
+      companyId: req.auth.companyId,
+      deviceId: device.id,
+      groupId: device.group_id || null,
+      limit: req.query.limit,
+    }),
+  });
 });
 
 // DELETE /api/devices/:id  — remove o device (e seu assignment proprio).

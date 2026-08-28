@@ -63,7 +63,7 @@
   #previewStage img, #previewStage video { width:100%; height:100%; object-fit:contain; }
   #previewBar { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); display:flex; gap:10px; align-items:center;
     background:var(--card); border:1px solid var(--line); border-radius:999px; padding:8px 16px; font-size:13px; }
-  #addPlayerModal, #schedModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
+  #addPlayerModal, #schedModal, #devModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
   #schDays label { margin:0; font-size:12px; } #schDays input { width:auto; }
   .modalBox { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; width:420px; max-width:92vw; }
   .modalBox label { margin-top:10px; } .modalBox select, .modalBox input { width:100%; }
@@ -103,6 +103,22 @@
   .stat { font-size:11px; font-weight:700; padding:2px 9px; border-radius:999px; white-space:nowrap; }
   .stat.on  { background:#173a29; color:#5fd08a; }
   .stat.off { background:#3a1f1f; color:#ed8c8c; }
+
+  .dot { display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:8px; vertical-align:middle; }
+  .dot.on  { background:#3fd08a; box-shadow:0 0 0 3px rgba(63,208,138,.22); }
+  .dot.off { background:#e06a6a; box-shadow:0 0 0 3px rgba(224,106,106,.22); }
+  .pbar { height:7px; border-radius:4px; background:#0d141c; border:1px solid var(--line); overflow:hidden; min-width:120px; }
+  .pbar .pfill { display:block; height:100%; transition:width .4s ease; }
+  .pfill.ok { background:#3fd08a; } .pfill.sync { background:var(--warn); }
+  .pfill.stale { background:#6b7785; } .pfill.none { background:transparent; }
+  .pmeta { display:flex; justify-content:space-between; gap:10px; font-size:11px; margin-top:3px; }
+  tr.dev-row { cursor:pointer; }
+  #devModal .modalBox { width:580px; max-height:88vh; overflow:auto; }
+  #devModal dl { display:grid; grid-template-columns:130px 1fr; gap:4px 10px; font-size:13px; margin:10px 0; }
+  #devModal dt { color:var(--mut); } #devModal dd { margin:0; word-break:break-all; }
+  .histlist { list-style:none; padding:0; margin:6px 0 0; font-size:12px; }
+  .histlist li { padding:6px 0; border-bottom:1px solid var(--line); }
+  .histlist .who { color:var(--mut); }
 </style>
 </head>
 <body>
@@ -185,7 +201,7 @@
       <button class="ghost" id="devRefreshBtn">atualizar</button>
     </div>
     <table id="devTbl"><thead><tr>
-      <th>ID</th><th>Serial</th><th>Nome</th><th>Tipo</th><th>Status</th><th>Playlist efetiva</th><th>Contato</th><th>Ação</th>
+      <th>ID</th><th>Nome</th><th>Tipo</th><th>Playlist efetiva</th><th>Atualização</th><th>Contato</th><th>Ação</th>
     </tr></thead><tbody></tbody></table>
   </div>
 
@@ -249,6 +265,17 @@
 </div>
 
 <div id="infoPanel" class="hidden"></div>
+
+<div id="devModal" class="hidden">
+  <div class="modalBox">
+    <div class="row" style="justify-content:space-between"><b>Editar player</b>
+      <button class="ghost" id="dmClose">fechar</button></div>
+    <div id="devModalBody"></div>
+    <div class="row" style="margin-top:14px">
+      <button id="dmSave">Salvar</button>
+    </div>
+  </div>
+</div>
 
 <div id="schedModal" class="hidden">
   <div class="modalBox">
@@ -840,39 +867,28 @@
     return '<span title="' + esc(String(ts)) + ' UTC">' + txt + '</span>';
   }
 
-  function devRowActions(dev) {
-    var cell = document.createElement('div');
-    cell.className = 'actcell';
+  function statusDot(dev) {
+    var on = deviceOnline(dev);
+    return '<span class="dot ' + (on ? 'on' : 'off') + '" title="' + (on ? 'online' : 'offline') + '"></span>';
+  }
 
-    var gsel = groupSelect(dev.group_id);
-    gsel.title = 'mover para outro grupo';
-    gsel.onchange = function () {
-      jpost('/api/devices/' + dev.id, { group_id: gsel.value ? Number(gsel.value) : null }, 'PATCH')
-        .then(function () { log('device ' + dev.serial + ' grupo=' + (gsel.value || '—'));
-          loadGroups().then(loadDevices); }).catch(function (e) { log(e.message); });
-    };
-
-    var psel = playlistSelect(dev.own_playlist ? dev.own_playlist.id : '');
-    psel.title = 'playlist propria do device (vazio = herda do grupo)';
-    var pbtn = document.createElement('button'); pbtn.textContent = 'atribuir';
-    pbtn.onclick = function () {
-      var call = psel.value
-        ? jpost('/api/devices/' + dev.id + '/assign', { playlist_id: Number(psel.value) })
-        : api('/api/devices/' + dev.id + '/assign', { method: 'DELETE' });
-      call.then(function () { log('device ' + dev.serial + ' -> playlist ' + (psel.value || '—(herda do grupo)'));
-        loadDevices(); }).catch(function (e) { log('assign: ' + e.message); });
-    };
-    var dbtn = document.createElement('button'); dbtn.className = 'danger'; dbtn.textContent = 'apagar';
-    dbtn.onclick = function () {
-      if (!confirm('Apagar o device ' + dev.serial + (dev.name ? ' (' + dev.name + ')' : '') +
-        '? Se o player ainda existir, ele pareia de novo como device novo.')) return;
-      api('/api/devices/' + dev.id, { method: 'DELETE' })
-        .then(function () { log('device ' + dev.serial + ' apagado'); loadGroups().then(loadDevices); })
-        .catch(function (e) { log('apagar device: ' + e.message); });
-    };
-
-    cell.appendChild(gsel); cell.appendChild(psel); cell.appendChild(pbtn); cell.appendChild(dbtn);
-    return cell;
+  // barra de atualizacao: aproximada (verde 100% quando o player confirmou a
+  // versao da playlist; "aplicando" enquanto nao). % real de download exigiria
+  // o player web + o APK reportarem progresso.
+  function syncInfo(dev) {
+    var eff = dev.effective_playlist;
+    if (!eff) return { pct: 0, cls: 'none', label: 'sem playlist' };
+    var applied = dev.last_version;
+    if (applied != null && applied >= eff.version) return { pct: 100, cls: 'ok', label: 'v' + eff.version + ' aplicada' };
+    if (deviceOnline(dev)) return { pct: 60, cls: 'sync', label: 'aplicando v' + eff.version };
+    return { pct: 12, cls: 'stale', label: 'pendente v' + eff.version };
+  }
+  function pbarHtml(dev) {
+    var s = syncInfo(dev);
+    var when = dev.last_version_at || dev.last_seen;
+    return '<div class="pbar"><i class="pfill ' + s.cls + '" style="width:' + s.pct + '%"></i></div>' +
+      '<div class="pmeta"><span>' + s.pct + '% · ' + esc(s.label) + '</span>' +
+      '<span class="muted">' + (when ? fmtAgo(when) : '—') + '</span></div>';
   }
 
   function devRow(dev) {
@@ -880,38 +896,57 @@
     var tr = document.createElement('tr');
     tr.className = 'dev-row ' + (on ? 'on' : 'off');
     var eff = dev.effective_playlist;
-    var hw = dev.hardware_id || '';
-    var hwShort = hw ? esc(hw.length > 22 ? hw.slice(0, 22) + '…' : hw) : '—';
     tr.innerHTML =
       '<td>' + dev.id + '</td>' +
-      '<td><code>' + esc(dev.serial) + '</code><br><span class="muted" style="font-size:11px" title="' + esc(hw) + '">hw: ' + hwShort + '</span></td>' +
-      '<td>' + esc(dev.name || '—') + '</td>' +
+      '<td>' + statusDot(dev) + '<b>' + esc(dev.name || '(sem nome)') + '</b></td>' +
       '<td>' + ptypeIcon(dev.player_type) + '</td>' +
-      '<td><span class="stat ' + (on ? 'on">online' : 'off">offline') + '</span></td>' +
       '<td>' + (eff ? esc(eff.name) : '<span class="muted">nenhuma</span>') + '</td>' +
+      '<td style="min-width:160px">' + pbarHtml(dev) + '</td>' +
       '<td class="muted">' + fmtAgo(dev.last_seen) + '</td>' +
       '<td></td>';
-    tr.children[7].appendChild(devRowActions(dev));
+    tr.onclick = function () { openDevModal(dev.id); };
+
+    var act = document.createElement('div'); act.className = 'actcell';
+    var ebtn = document.createElement('button'); ebtn.className = 'ghost'; ebtn.textContent = 'editar';
+    ebtn.onclick = function (e) { e.stopPropagation(); openDevModal(dev.id); };
+    var dbtn = document.createElement('button'); dbtn.className = 'danger'; dbtn.textContent = 'apagar';
+    dbtn.onclick = function (e) {
+      e.stopPropagation();
+      if (!confirm('Apagar o device ' + dev.serial + (dev.name ? ' (' + dev.name + ')' : '') +
+        '? Se o player ainda existir, ele pareia de novo como device novo.')) return;
+      api('/api/devices/' + dev.id, { method: 'DELETE' })
+        .then(function () { log('device ' + dev.serial + ' apagado'); loadGroups().then(loadDevices); })
+        .catch(function (e2) { log('apagar device: ' + e2.message); });
+    };
+    act.appendChild(ebtn); act.appendChild(dbtn);
+    tr.children[6].appendChild(act);
     return tr;
   }
 
   function grpRow(g, count) {
     var tr = document.createElement('tr');
     tr.className = 'grp-row' + (g ? '' : ' nogrp');
-    var td = document.createElement('td'); td.colSpan = 8;
+    var td = document.createElement('td'); td.colSpan = 7;
     var head = document.createElement('div'); head.className = 'grp-head';
 
     if (!g) {
       head.innerHTML = '<span class="gname">Sem grupo</span><span class="gcount">' + count + ' player(s)</span>';
       td.appendChild(head); tr.appendChild(td); return tr;
     }
+    var cur = g.assigned_playlist_name
+      ? esc(g.assigned_playlist_name) + ' (v' + g.assigned_playlist_version + ')'
+      : '<span class="muted">nenhuma</span>';
     head.innerHTML = '<span class="gname">▸ ' + esc(g.name) + '</span>' +
-      '<span class="gcount">' + count + ' player(s)</span><span class="gspace"></span>';
+      '<span class="gcount">' + count + ' player(s)</span>' +
+      '<span class="gcount">playlist atual: <b>' + cur + '</b></span>' +
+      '<span class="gspace"></span>';
 
     var sel = playlistSelect(g.assigned_playlist_id);
-    sel.title = 'playlist do grupo (herdada pelos players sem playlist propria)';
-    var assignBtn = document.createElement('button'); assignBtn.textContent = 'playlist';
-    assignBtn.onclick = function () {
+    sel.title = 'nova playlist do grupo — clique em Salvar para aplicar';
+    var orig = String(g.assigned_playlist_id || '');
+    var saveBtn = document.createElement('button'); saveBtn.textContent = 'Salvar'; saveBtn.disabled = true;
+    sel.onchange = function () { saveBtn.disabled = (String(sel.value || '') === orig); };
+    saveBtn.onclick = function () {
       var call = sel.value
         ? jpost('/api/device-groups/' + g.id + '/assign', { playlist_id: Number(sel.value) })
         : api('/api/device-groups/' + g.id + '/assign', { method: 'DELETE' });
@@ -931,7 +966,7 @@
         .then(function (r) { log('grupo apagado (' + r.ungrouped_devices + ' players desagrupados)');
           loadGroups().then(loadDevices); }).catch(function (e) { log(e.message); });
     };
-    head.appendChild(sel); head.appendChild(assignBtn); head.appendChild(renBtn); head.appendChild(delBtn);
+    head.appendChild(sel); head.appendChild(saveBtn); head.appendChild(renBtn); head.appendChild(delBtn);
     td.appendChild(head); tr.appendChild(td);
     return tr;
   }
@@ -955,12 +990,130 @@
       }
       if (!d.devices.length && !(state.groups || []).length) {
         var tr = document.createElement('tr');
-        tr.innerHTML = '<td colspan="8" class="muted">Nenhum grupo ou dispositivo. Use "+ Grupo" / "+ Dispositivo".</td>';
+        tr.innerHTML = '<td colspan="7" class="muted">Nenhum grupo ou dispositivo. Use "+ Grupo" / "+ Dispositivo".</td>';
         tb.appendChild(tr);
       }
     });
   }
   $('devRefreshBtn').onclick = function () { loadGroups().then(loadDevices); };
+
+  // ---- modal de edicao do player ----
+  var devModalId = null;
+  var devModalOrig = null;
+
+  function openDevModal(id) {
+    devModalId = id;
+    $('devModal').classList.remove('hidden');
+    $('devModalBody').innerHTML = '<p class="muted">carregando…</p>';
+    $('dmSave').disabled = false;
+    Promise.all([
+      api('/api/devices/' + id),
+      api('/api/devices/' + id + '/activity?limit=5').catch(function () { return { activity: null }; }),
+    ]).then(function (res) {
+      renderDevModal(res[0].device, res[1].activity);
+    }).catch(function (e) {
+      $('devModalBody').innerHTML = '<p class="muted">erro: ' + esc(e.message) + '</p>';
+    });
+  }
+
+  function renderDevModal(dev, activity) {
+    var eff = dev.effective_playlist;
+    var body = $('devModalBody');
+    body.innerHTML = '';
+
+    var h = document.createElement('div');
+    h.innerHTML = statusDot(dev) + '<b style="font-size:15px">' + esc(dev.name || '(sem nome)') + '</b> ' +
+      '<span class="muted">' + (deviceOnline(dev) ? 'online' : 'offline · ' + fmtAgo(dev.last_seen)) + '</span>';
+    body.appendChild(h);
+
+    var bar = document.createElement('div'); bar.style.margin = '12px 0';
+    bar.innerHTML = pbarHtml(dev);
+    body.appendChild(bar);
+
+    var dl = document.createElement('dl');
+    dl.innerHTML =
+      row('ID', dev.id) +
+      row('Serial', '<code>' + esc(dev.serial) + '</code>') +
+      row('Hardware', '<span class="muted">' + esc(dev.hardware_id || '—') + '</span>') +
+      row('Tipo', ptypeIcon(dev.player_type) + ' ' + esc(dev.player_type)) +
+      row('Situação', deviceOnline(dev) ? 'online' : 'offline') +
+      row('Último contato', fmtAgo(dev.last_seen)) +
+      row('Versão alvo', (eff ? 'v' + eff.version + ' — ' + esc(eff.name) : '—')) +
+      row('Versão no player', (dev.last_version != null ? 'v' + dev.last_version : '—') +
+        (dev.last_version_at ? ' <span class="muted">(' + fmtAgo(dev.last_version_at) + ')</span>' : '')) +
+      row('Capacidades', '<span class="muted">' + esc(dev.capabilities || '—') + '</span>');
+    body.appendChild(dl);
+
+    var form = document.createElement('div');
+    form.innerHTML =
+      '<label>Nome</label><input id="dmName">' +
+      '<label>Grupo</label><span id="dmGroupWrap"></span>' +
+      '<label>Playlist própria (vazio = herda do grupo)</label><span id="dmPlWrap"></span>' +
+      '<div class="muted" style="margin-top:6px">Efetiva agora: <b>' +
+        (eff ? esc(eff.name) + ' (v' + eff.version + ', ' + (eff.source === 'group' ? 'do grupo' : 'própria') + ')' : 'nenhuma') +
+      '</b></div>';
+    body.appendChild(form);
+    $('dmName').value = dev.name || '';
+    var gsel = groupSelect(dev.group_id); gsel.id = 'dmGroupSel'; $('dmGroupWrap').appendChild(gsel);
+    var psel = playlistSelect(dev.own_playlist ? dev.own_playlist.id : ''); psel.id = 'dmPlSel'; $('dmPlWrap').appendChild(psel);
+
+    devModalOrig = {
+      name: dev.name || '',
+      group_id: dev.group_id ? String(dev.group_id) : '',
+      own_pl: dev.own_playlist ? String(dev.own_playlist.id) : '',
+    };
+
+    var hist = document.createElement('div');
+    if (activity == null) {
+      hist.innerHTML = '<h3 class="muted" style="font-size:13px;margin:14px 0 4px">Histórico</h3>' +
+        '<p class="muted" style="font-size:12px">indisponível — reinicie o servidor (npm start) para ativar a trilha de auditoria.</p>';
+    } else if (!activity.length) {
+      hist.innerHTML = '<h3 class="muted" style="font-size:13px;margin:14px 0 4px">Histórico</h3>' +
+        '<p class="muted" style="font-size:12px">nenhuma mudança registrada ainda.</p>';
+    } else {
+      hist.innerHTML = '<h3 class="muted" style="font-size:13px;margin:14px 0 4px">Últimas ' + activity.length + ' mudanças</h3>' +
+        '<ul class="histlist">' + activity.map(function (a) {
+          return '<li>' + esc(a.detail || a.action) +
+            '<br><span class="who">' + esc(a.actor_email || 'sistema') + ' · ' + fmtAgo(a.created_at) +
+            (a.target_type === 'group' ? ' · grupo' : '') + '</span></li>';
+        }).join('') + '</ul>';
+    }
+    body.appendChild(hist);
+  }
+
+  $('dmClose').onclick = function () { devModalId = null; $('devModal').classList.add('hidden'); };
+  $('dmSave').onclick = function () {
+    if (!devModalId || !devModalOrig) return;
+    var id = devModalId;
+    var name = $('dmName').value.trim();
+    var grp = $('dmGroupSel').value || '';
+    var pl = $('dmPlSel').value || '';
+    var chain = Promise.resolve();
+    var acted = [];
+    if (name !== devModalOrig.name) {
+      chain = chain.then(function () { return jpost('/api/devices/' + id, { name: name }, 'PATCH'); });
+      acted.push('nome');
+    }
+    if (grp !== devModalOrig.group_id) {
+      chain = chain.then(function () { return jpost('/api/devices/' + id, { group_id: grp ? Number(grp) : null }, 'PATCH'); });
+      acted.push('grupo');
+    }
+    if (pl !== devModalOrig.own_pl) {
+      chain = chain.then(function () {
+        return pl
+          ? jpost('/api/devices/' + id + '/assign', { playlist_id: Number(pl) })
+          : api('/api/devices/' + id + '/assign', { method: 'DELETE' });
+      });
+      acted.push('playlist');
+    }
+    if (!acted.length) { log('nada mudou'); return; }
+    $('dmSave').disabled = true;
+    chain.then(function () {
+      log('player #' + id + ' salvo (' + acted.join(', ') + ')');
+      loadGroups().then(loadDevices);
+      openDevModal(id);
+    }).catch(function (e) { log('salvar: ' + e.message); $('dmSave').disabled = false; });
+  };
 
   // ---- Add player ----
   var apPoll = null;
