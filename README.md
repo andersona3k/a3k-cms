@@ -274,15 +274,20 @@ public/
                        arvore ("Geral" garantida na raiz; subpastas ate 3 niveis;
                        "+ pasta" cria DENTRO da selecionada) | grade de arquivos
                        (miniatura real p/ imagem E video via thumb_url, glifo p/
-                       audio) | visualizador fixo #libPreview (media + formato/
-                       tamanho/etc + "mudar pasta"/"renomear"/"remover asset").
-                       Botao "+ enviar arquivo" abre o seletor e ja envia
-                       (multiplo, fila) p/ a pasta ativa.
+                       audio) | visualizador fixo #libPreview. Botao "+ enviar
+                       arquivo" abre o seletor e ja envia (multiplo, fila) p/ a
+                       pasta ativa. Visualizador = 2 blocos <details> recolhiveis:
+                       "Detalhes do arquivo" (campos enxutos por tipo, bitrate em
+                       Mbps, "Analise" [= o antigo probe] com texto explicativo,
+                       "Vinculado a playlist: Sim/Nao [+ nomes]", mudar pasta /
+                       renomear / remover asset) e "Condicionais" (validade
+                       inicio/fim com data+hora, dias da semana, horario 24h;
+                       criado por + ultimas 3 modificacoes).
 node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m11.test.js  testes de aceite (123 no total)
+  m0..m12.test.js  testes de aceite (128 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -296,7 +301,10 @@ por plataforma. Sem toolchain nativo. `FFPROBE_PATH` no `.env` sobrescreve.
 `assets` ganhou `format`, `metadata` (dump cru do probe), `probe_status`
 (`pending`/`ok`/`error`/`skipped`) e `probe_error` no M2; `thumb_url` (migration
 009) = poster de video (`ffmpeg` extrai 1 frame no probe -> `media/<hash>.thumb.jpg`,
-servido em `/assets/`).
+servido em `/assets/`); `schedule` (JSON: validade data+hora / dias / horario 24h),
+`created_by`, `history` (JSON, ultimas 10 modificacoes) na migration 010 —
+`GET /api/assets/:id` devolve tambem `playlists` que usam o asset; `PATCH` valida
+`schedule` via `src/lib/assetSchedule.js` e acrescenta ao `history`.
 `device_groups`, `devices` (`serial` unico, `player_type`, `capabilities` JSON,
 `hardware_id`/`token`/`last_version` do pareamento; `last_version_at` = quando o
 heartbeat confirmou uma versao nova, migration 008).

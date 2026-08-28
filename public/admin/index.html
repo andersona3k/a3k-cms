@@ -153,7 +153,22 @@
   #libPreview .pvmedia { width:100%; max-height:300px; object-fit:contain; background:#000; border-radius:8px; border:1px solid var(--line); }
   #libPreview dl { display:grid; grid-template-columns:96px 1fr; gap:4px 10px; font-size:12px; margin:12px 0; }
   #libPreview dt { color:var(--mut); } #libPreview dd { margin:0; word-break:break-all; }
-  #libPreview label { margin-top:10px; } #libPreview select, #libPreview input { width:100%; }
+  #libPreview label { margin-top:10px; display:block; } #libPreview select, #libPreview input { width:100%; }
+  #libPreview .pvhead { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; }
+  .pvblock { border:1px solid var(--line); border-radius:8px; margin-top:10px; background:#0b1219; }
+  .pvblock > summary { list-style:none; cursor:pointer; padding:9px 12px; font-weight:700; font-size:13px;
+    display:flex; align-items:center; gap:6px; user-select:none; }
+  .pvblock > summary::-webkit-details-marker { display:none; }
+  .pvblock > summary::before { content:'▸'; color:var(--mut); font-size:11px; }
+  .pvblock[open] > summary::before { content:'▾'; }
+  .pvblock[open] > summary { border-bottom:1px solid var(--line); }
+  .pvbody { padding:10px 12px; }
+  .daychips { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .daychip { padding:4px 8px; border:1px solid var(--line); border-radius:6px; background:#0d141c;
+    font-size:12px; cursor:pointer; }
+  .daychip.on { background:var(--acc); border-color:var(--acc); color:#fff; }
+  .timepair { display:flex; align-items:center; gap:6px; }
+  .timepair input { width:auto; flex:1; }
 </style>
 </head>
 <body>
@@ -670,6 +685,19 @@
   }
 
   // ---- visualizador (coluna fixa dentro da Biblioteca) ----
+  function fmtMbps(bits) {
+    if (bits == null) return '—';
+    var m = bits / 1e6;
+    return (m < 10 ? m.toFixed(2) : m.toFixed(1)) + ' Mbps';
+  }
+  function prettyCodec(c) {
+    return ({ h264: 'H.264', avc1: 'H.264', hevc: 'H.265 (HEVC)', h265: 'H.265 (HEVC)',
+      vp9: 'VP9', vp8: 'VP8', av1: 'AV1', mpeg4: 'MPEG-4', aac: 'AAC', mp3: 'MP3',
+      opus: 'Opus', vorbis: 'Vorbis', flac: 'FLAC', pcm_s16le: 'PCM (WAV)' })[String(c || '').toLowerCase()] || (c || '—');
+  }
+  var PROBE_TXT = { ok: 'concluida', error: 'falhou', pending: 'em andamento', skipped: 'nao se aplica' };
+  var DIAS = [['Seg', 1], ['Ter', 2], ['Qua', 3], ['Qui', 4], ['Sex', 5], ['Sab', 6], ['Dom', 7]];
+
   function openInfo(id) {
     state.selectedAsset = id;
     var grid = $('assetGrid');
@@ -681,40 +709,99 @@
     }
     api('/api/assets/' + id).then(function (d) {
       var a = d.asset;
+      var pls = d.playlists || [];
       var p = $('libPreview');
+
       var media = a.type === 'image'
         ? '<img class="pvmedia" src="' + API + a.url + '" />'
         : a.type === 'video'
           ? '<video class="pvmedia" src="' + API + a.url + '" controls muted ' +
             (a.thumb_url ? 'poster="' + API + a.thumb_url + '"' : '') + '></video>'
           : '<div class="pvmedia" style="display:flex;align-items:center;justify-content:center;font-size:44px;height:160px">' + assetGlyph(a.type) + '</div>';
+
+      // ---- bloco 1: detalhes (enxuto por tipo) ----
+      var rows;
+      if (a.type === 'video') {
+        rows = row('Tipo', 'video') + row('Formato', prettyCodec(a.codec)) + row('Resolucao', resOf(a)) +
+          row('Duracao', durOf(a)) + row('FPS', a.fps != null ? a.fps : '—') +
+          row('Bitrate', fmtMbps(a.bitrate)) + row('Tamanho', fmtBytes(a.size_bytes));
+      } else if (a.type === 'audio') {
+        rows = row('Tipo', 'audio') + row('Formato', prettyCodec(a.codec)) + row('Duracao', durOf(a)) +
+          row('Bitrate', fmtMbps(a.bitrate)) + row('Tamanho', fmtBytes(a.size_bytes));
+      } else {
+        rows = row('Tipo', 'imagem') + row('Formato', String(a.format || a.mime || '—').toUpperCase()) +
+          row('Resolucao', resOf(a)) + row('Tamanho', fmtBytes(a.size_bytes));
+      }
+      var probe = '<span class="pill ' + a.probe_status + '">' + (PROBE_TXT[a.probe_status] || a.probe_status) + '</span>' +
+        (a.probe_error ? ' <span class="muted">' + esc(a.probe_error) + '</span>' : '');
+      rows += row('Analise', probe);
+
+      var vinc = pls.length
+        ? '<b>Sim</b><div class="muted" style="margin-top:2px">' + pls.map(function (x) { return esc(x.name); }).join(', ') + '</div>'
+        : '<b>Nao</b>';
+
       var folderOpts = '<option value="">escolher dentro</option>' + state.folders.map(function (f) {
         return '<option value="' + f.id + '"' + (f.id === a.folder_id ? ' selected' : '') + '>' + esc(folderPath(f.id)) + '</option>';
       }).join('');
-      p.innerHTML =
-        '<div class="row" style="justify-content:space-between"><b>#' + a.id + ' ' + esc(a.filename) + '</b>' +
-        '<button class="ghost" id="infoClose">fechar</button></div>' + media +
-        '<dl>' +
-        row('Tipo', a.type) + row('Formato', a.format || '—') + row('Resolucao', resOf(a)) +
-        row('Duracao', durOf(a)) + row('FPS', a.fps != null ? a.fps : '—') +
-        row('Bitrate', a.bitrate != null ? fmtBits(a.bitrate) : '—') + row('Codec', a.codec || '—') +
-        row('Tamanho', fmtBytes(a.size_bytes)) +
-        row('Probe', '<span class="pill ' + a.probe_status + '">' + a.probe_status + '</span>' +
-          (a.probe_error ? ' <span class="muted">' + esc(a.probe_error) + '</span>' : '')) +
-        '</dl>' +
+
+      var det =
+        '<details class="pvblock" open id="pvDet"><summary>Detalhes do arquivo</summary><div class="pvbody">' +
+        '<dl>' + rows + '</dl>' +
+        '<p class="muted" style="font-size:11px;margin:0 0 8px">Analise = leitura tecnica do arquivo (resolucao, codec, duracao...) feita no upload. "concluida" = deu certo.</p>' +
+        '<dl>' + row('Vinculado a playlist', vinc) + '</dl>' +
         '<label>mudar pasta</label><select id="infoFolder">' + folderOpts + '</select>' +
         '<label>renomear</label><input id="infoName" value="' + esc(a.filename) + '" />' +
         '<div class="row" style="margin-top:12px">' +
         '<button id="infoSave">Salvar</button>' +
         '<button class="ghost" id="infoReprobe">Reprocessar / converter</button>' +
-        '<button class="danger" id="infoDelete">remover asset</button></div>';
+        '<button class="danger" id="infoDelete">remover asset</button></div>' +
+        '</div></details>';
+
+      // ---- bloco 2: condicionais ----
+      var sc = {};
+      try { sc = a.schedule ? (typeof a.schedule === 'string' ? JSON.parse(a.schedule) : a.schedule) : {}; } catch (e) { sc = {}; }
+      var selDays = Array.isArray(sc.days) ? sc.days.map(Number) : [];
+      var chips = DIAS.map(function (dd) {
+        return '<span class="daychip' + (selDays.indexOf(dd[1]) >= 0 ? ' on' : '') + '" data-d="' + dd[1] + '">' + dd[0] + '</span>';
+      }).join('');
+      var hist = [];
+      try { hist = a.history ? JSON.parse(a.history) : []; } catch (e) { hist = []; }
+      var histHtml = hist.length
+        ? '<ul class="histlist">' + hist.slice(-3).reverse().map(function (h) {
+            return '<li>' + esc(h.user || '?') + ' — ' + esc(h.at || '') +
+              (h.change ? ' <span class="who">(' + esc(h.change) + ')</span>' : '') + '</li>';
+          }).join('') + '</ul>'
+        : '<p class="muted" style="font-size:12px">sem modificacoes ainda.</p>';
+
+      var cond =
+        '<details class="pvblock" open id="pvCond"><summary>Condicionais</summary><div class="pvbody">' +
+        '<label>Validade — inicio (data e hora)</label><input type="datetime-local" id="condFrom" value="' + (sc.from || '') + '" />' +
+        '<label>Validade — fim (data e hora)</label><input type="datetime-local" id="condUntil" value="' + (sc.until || '') + '" />' +
+        '<label>Dias da semana <span class="muted">(nenhum = todos)</span></label>' +
+        '<div class="daychips" id="condDays">' + chips + '</div>' +
+        '<label>Horario (24h) — exibir entre</label>' +
+        '<div class="timepair"><input type="time" id="condStart" value="' + (sc.start || '') + '" />' +
+        '<span class="muted">e</span><input type="time" id="condEnd" value="' + (sc.end || '') + '" /></div>' +
+        '<p class="muted" style="font-size:11px;margin:4px 0 0">24h: 09:00 = manha, 21:00 = noite.</p>' +
+        '<div class="row" style="margin-top:12px"><button id="condSave">Salvar condicionais</button>' +
+        '<button class="ghost" id="condClear">Limpar</button></div>' +
+        '<hr style="border:0;border-top:1px solid var(--line);margin:12px 0" />' +
+        '<p class="muted" style="font-size:12px;margin:0 0 4px">Criado por <b>' + esc(a.created_by || '—') +
+        '</b> em ' + esc(a.created_at || '—') + '.</p>' +
+        '<div class="muted" style="font-size:12px">Modificacoes (ultimas 3):</div>' + histHtml +
+        '</div></details>';
+
+      p.innerHTML =
+        '<div class="pvhead"><b>#' + a.id + ' ' + esc(a.filename) + '</b>' +
+        '<button class="ghost" id="infoClose">fechar</button></div>' + media + det + cond;
+
       $('infoClose').onclick = clearPreview;
       $('infoSave').onclick = function () {
         jpost('/api/assets/' + a.id, {
           folder_id: $('infoFolder').value ? Number($('infoFolder').value) : null,
           filename: $('infoName').value,
         }, 'PATCH').then(function () { log('asset #' + a.id + ' atualizado');
-          loadFolders().then(loadAssets); }).catch(function (e) { log(e.message); });
+          loadFolders().then(loadAssets); openInfo(a.id); }).catch(function (e) { log(e.message); });
       };
       $('infoReprobe').onclick = function () {
         api('/api/assets/' + a.id + '/reprobe', { method: 'POST' })
@@ -730,6 +817,28 @@
         });
         function done() { log('asset #' + a.id + ' removido'); clearPreview();
           loadFolders().then(loadAssets).then(loadPlaylists); }
+      };
+      $('condDays').onclick = function (e) {
+        if (e.target.classList.contains('daychip')) e.target.classList.toggle('on');
+      };
+      $('condSave').onclick = function () {
+        var days = [].map.call($('condDays').querySelectorAll('.daychip.on'), function (c) { return Number(c.dataset.d); });
+        var body = {
+          from: $('condFrom').value || undefined,
+          until: $('condUntil').value || undefined,
+          days: days.length ? days : undefined,
+          start: $('condStart').value || undefined,
+          end: $('condEnd').value || undefined,
+        };
+        var any = body.from || body.until || body.days || body.start || body.end;
+        jpost('/api/assets/' + a.id, { schedule: any ? body : null }, 'PATCH')
+          .then(function () { log('condicionais do asset #' + a.id + ' salvas'); openInfo(a.id); })
+          .catch(function (e) { log('condicionais: ' + e.message); });
+      };
+      $('condClear').onclick = function () {
+        jpost('/api/assets/' + a.id, { schedule: null }, 'PATCH')
+          .then(function () { log('condicionais limpas'); openInfo(a.id); })
+          .catch(function (e) { log(e.message); });
       };
     }).catch(function (e) { log(e.message); });
   }

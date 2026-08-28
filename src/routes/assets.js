@@ -5,6 +5,7 @@ const { getDb } = require('../db');
 const { requireAuth, writeGuard } = require('../auth/middleware');
 const { upload, assetTypeFromMime, finalizeUpload } = require('../lib/media');
 const { applyProbeToAsset, deleteAssetFileIfOrphan } = require('../lib/library');
+const { validateAssetSchedule } = require('../lib/assetSchedule');
 
 const router = express.Router();
 router.use(requireAuth, writeGuard('assets:write'));
@@ -13,6 +14,27 @@ function scoped(db, id, companyId) {
   return db
     .prepare('SELECT * FROM assets WHERE id = ? AND company_id = ?')
     .get(Number(id), companyId);
+}
+
+// playlists que usam este asset
+function playlistsOf(db, assetId) {
+  return db
+    .prepare(
+      `SELECT DISTINCT p.id, p.name
+         FROM playlist_items pi JOIN playlists p ON p.id = pi.playlist_id
+        WHERE pi.asset_id = ?
+        ORDER BY p.name`
+    )
+    .all(assetId);
+}
+
+// acrescenta uma entrada ao history (JSON), mantendo as ultimas 10
+function pushHistory(existingJson, entry) {
+  let arr = [];
+  try { arr = JSON.parse(existingJson) || []; } catch { arr = []; }
+  if (!Array.isArray(arr)) arr = [];
+  arr.push(entry);
+  return JSON.stringify(arr.slice(-10));
 }
 
 // POST /api/assets  (multipart: "file", opcional "folder_id")
@@ -44,8 +66,8 @@ router.post('/', upload.single('file'), async (req, res, next) => {
 
     const info = db
       .prepare(
-        `INSERT INTO assets (company_id, folder_id, type, filename, url, hash, size_bytes, mime, probe_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+        `INSERT INTO assets (company_id, folder_id, type, filename, url, hash, size_bytes, mime, probe_status, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
       )
       .run(
         req.auth.companyId,
@@ -55,7 +77,8 @@ router.post('/', upload.single('file'), async (req, res, next) => {
         `/assets/${storedName}`,
         hash,
         size,
-        req.file.mimetype || null
+        req.file.mimetype || null,
+        req.auth.email || null
       );
 
     let asset = scoped(db, Number(info.lastInsertRowid), req.auth.companyId);
@@ -87,14 +110,15 @@ router.get('/', (req, res) => {
   res.json({ assets: rows });
 });
 
-// GET /api/assets/:id  (painel de info)
+// GET /api/assets/:id  (visualizador: asset + playlists vinculadas)
 router.get('/:id', (req, res) => {
-  const asset = scoped(getDb(), req.params.id, req.auth.companyId);
+  const db = getDb();
+  const asset = scoped(db, req.params.id, req.auth.companyId);
   if (!asset) return res.status(404).json({ error: 'asset nao encontrado' });
-  res.json({ asset });
+  res.json({ asset, playlists: playlistsOf(db, asset.id) });
 });
 
-// PATCH /api/assets/:id  { folder_id?, filename? }   (mover / renomear)
+// PATCH /api/assets/:id  { folder_id?, filename?, schedule? }
 router.patch('/:id', (req, res) => {
   const db = getDb();
   const asset = scoped(db, req.params.id, req.auth.companyId);
@@ -103,6 +127,7 @@ router.patch('/:id', (req, res) => {
   const b = req.body || {};
   const sets = [];
   const vals = [];
+  const changes = [];
 
   if (b.folder_id !== undefined) {
     const fid = b.folder_id === null || b.folder_id === '' ? null : Number(b.folder_id);
@@ -113,18 +138,35 @@ router.patch('/:id', (req, res) => {
       if (!f) return res.status(400).json({ error: 'folder_id invalido' });
     }
     sets.push('folder_id = ?'); vals.push(fid);
+    changes.push('pasta');
   }
   if (b.filename !== undefined) {
     const fn = String(b.filename).trim();
     if (!fn) return res.status(400).json({ error: 'filename vazio' });
     sets.push('filename = ?'); vals.push(fn);
+    changes.push('nome');
+  }
+  if (b.schedule !== undefined) {
+    const v = validateAssetSchedule(b.schedule);
+    if (!v.ok) return res.status(400).json({ error: v.error });
+    sets.push('schedule = ?'); vals.push(v.value ? JSON.stringify(v.value) : null);
+    changes.push('condicionais');
   }
   if (!sets.length) return res.status(400).json({ error: 'nada para atualizar' });
 
+  sets.push('history = ?');
+  vals.push(
+    pushHistory(asset.history, {
+      user: req.auth.email || '?',
+      at: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      change: changes.join(', '),
+    })
+  );
   sets.push(`updated_at = datetime('now')`);
   vals.push(asset.id);
   db.prepare(`UPDATE assets SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
-  res.json({ asset: scoped(db, asset.id, req.auth.companyId) });
+  const updated = scoped(db, asset.id, req.auth.companyId);
+  res.json({ asset: updated, playlists: playlistsOf(db, asset.id) });
 });
 
 // POST /api/assets/:id/reprobe   (re-extrai metadados)
