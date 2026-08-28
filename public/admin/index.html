@@ -47,7 +47,8 @@
   #previewStage img, #previewStage video { width:100%; height:100%; object-fit:contain; }
   #previewBar { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); display:flex; gap:10px; align-items:center;
     background:var(--card); border:1px solid var(--line); border-radius:999px; padding:8px 16px; font-size:13px; }
-  #addPlayerModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
+  #addPlayerModal, #schedModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
+  #schDays label { margin:0; font-size:12px; } #schDays input { width:auto; }
   .modalBox { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; width:420px; max-width:92vw; }
   .modalBox label { margin-top:10px; } .modalBox select, .modalBox input { width:100%; }
   .code { font:800 40px/1 ui-monospace,Menlo,Consolas,monospace; letter-spacing:8px; text-align:center;
@@ -104,7 +105,7 @@
       <button id="plAddBtn">Adicionar item</button>
       <button class="ghost" id="plPreviewBtn">Preview</button>
     </div>
-    <table id="plItemsTbl"><thead><tr><th style="width:24px"></th><th>#</th><th>Asset</th><th>Tipo</th><th>Duracao (s)</th><th></th></tr></thead><tbody id="plItemsBody"></tbody></table>
+    <table id="plItemsTbl"><thead><tr><th style="width:24px"></th><th>#</th><th>Asset</th><th>Tipo</th><th>Duracao (s)</th><th>Horario</th><th></th></tr></thead><tbody id="plItemsBody"></tbody></table>
     <p class="muted" id="plVersion"></p>
     <p class="muted">Arraste pela alca <span style="cursor:grab">⠿</span> para reordenar. A duracao salva ao sair do campo.</p>
   </div>
@@ -187,6 +188,27 @@
 
 <div id="infoPanel" class="hidden"></div>
 
+<div id="schedModal" class="hidden">
+  <div class="modalBox">
+    <div class="row" style="justify-content:space-between"><b>Horario do item</b><button class="ghost" id="schClose">fechar</button></div>
+    <p class="muted" id="schItem" style="font-size:12px"></p>
+    <label>Dias (vazio = todos)</label>
+    <div id="schDays" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    <div class="row" style="margin-top:8px">
+      <div><label>Inicio</label><input id="schStart" type="time" /></div>
+      <div><label>Fim</label><input id="schEnd" type="time" /></div>
+    </div>
+    <div class="row">
+      <div><label>De (data, opc.)</label><input id="schFrom" type="date" /></div>
+      <div><label>Ate (data, opc.)</label><input id="schUntil" type="date" /></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="schSave">Salvar</button>
+      <button class="ghost" id="schClear">Sempre no ar (limpar)</button>
+    </div>
+  </div>
+</div>
+
 <div id="previewModal" class="hidden">
   <div id="previewStage"></div>
   <div id="previewBar">
@@ -219,7 +241,17 @@
     return fetch(API + path, opts).then(function (r) {
       return r.text().then(function (t) {
         var body = t ? JSON.parse(t) : {};
-        if (!r.ok) { var e = new Error(body.error || ('HTTP ' + r.status)); e.body = body; throw e; }
+        if (!r.ok) {
+          // contexto de empresa obsoleto -> volta p/ a empresa propria e segue
+          if (r.status === 400 && /X-Company-Id/i.test(body.error || '') && state.companyCtx) {
+            state.companyCtx = '';
+            try { localStorage.removeItem('a3k_company_ctx'); } catch (e) {}
+            if (opts.headers) delete opts.headers['x-company-id'];
+            log('contexto de empresa invalido — voltando p/ a empresa propria');
+            return api(path, opts);
+          }
+          var e = new Error(body.error || ('HTTP ' + r.status)); e.body = body; throw e;
+        }
         return body;
       });
     });
@@ -428,12 +460,17 @@
       d.items.forEach(function (it, idx) {
         var tr = document.createElement('tr');
         tr.setAttribute('data-item', it.id);
+        var dot = it.active_now ? '<span title="no ar agora" style="color:#5fd08a">●</span> '
+                                : '<span title="fora do horario" style="color:#e0a12f">●</span> ';
         tr.innerHTML =
           '<td class="drag" title="arraste">⠿</td><td>' + (idx + 1) + '</td><td>' + esc(it.filename) +
           '</td><td>' + it.type +
           '</td><td><input class="durInput" type="number" min="0.5" step="0.5" value="' + it.duration + '" /></td>' +
+          '<td>' + (it.schedule ? dot : '') + '<span class="muted" style="font-size:12px">' + schedFmt(it.schedule) +
+          '</span> <button class="ghost sched-btn">⏰</button></td>' +
           '<td><button class="ghost" data-del="' + it.id + '">remover</button></td>';
         tb.appendChild(tr);
+        tr.querySelector('.sched-btn').onclick = function () { openSchedEditor(it); };
         tr.querySelector('.durInput').onchange = function () {
           var v = Number(this.value);
           jpost('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { duration: v }, 'PATCH')
@@ -462,6 +499,53 @@
       });
     });
   }
+
+  // ---- day-parting (M6) ----
+  var DAY_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom']; // ISO 1..7
+  function schedFmt(s) {
+    if (!s) return 'sempre';
+    var parts = [];
+    if (s.days && s.days.length) parts.push(s.days.map(function (d) { return DAY_LABELS[d - 1]; }).join(','));
+    var a = s.start || '00:00', b = s.end || '24:00';
+    if (s.start || s.end) parts.push(a + '–' + b);
+    if (s.from || s.until) parts.push((s.from || '…') + '→' + (s.until || '…'));
+    return parts.join(' · ') || 'sempre';
+  }
+  var schedItem = null;
+  function openSchedEditor(it) {
+    schedItem = it;
+    var s = it.schedule || {};
+    $('schItem').textContent = '#' + it.id + ' ' + it.filename;
+    var box = $('schDays'); box.innerHTML = '';
+    for (var i = 1; i <= 7; i++) {
+      var checked = s.days && s.days.indexOf(i) >= 0 ? ' checked' : '';
+      box.insertAdjacentHTML('beforeend',
+        '<label><input type="checkbox" value="' + i + '"' + checked + '> ' + DAY_LABELS[i - 1] + '</label>');
+    }
+    $('schStart').value = s.start || '';
+    $('schEnd').value = s.end || '';
+    $('schFrom').value = s.from || '';
+    $('schUntil').value = s.until || '';
+    $('schedModal').classList.remove('hidden');
+  }
+  function saveSched(schedule) {
+    jpost('/api/playlists/' + state.activePlaylist + '/items/' + schedItem.id, { schedule: schedule }, 'PATCH')
+      .then(function (r) { log('horario do item ' + schedItem.id + ' salvo, v' + r.version);
+        $('schedModal').classList.add('hidden'); loadPlaylistItems(); loadPlaylists(); })
+      .catch(function (e) { log('horario: ' + e.message); });
+  }
+  $('schClose').onclick = function () { $('schedModal').classList.add('hidden'); };
+  $('schClear').onclick = function () { saveSched(null); };
+  $('schSave').onclick = function () {
+    var days = Array.prototype.map.call($('schDays').querySelectorAll('input:checked'), function (c) { return Number(c.value); });
+    var s = {};
+    if (days.length) s.days = days;
+    if ($('schStart').value) s.start = $('schStart').value;
+    if ($('schEnd').value) s.end = $('schEnd').value;
+    if ($('schFrom').value) s.from = $('schFrom').value;
+    if ($('schUntil').value) s.until = $('schUntil').value;
+    saveSched(Object.keys(s).length ? s : null);
+  };
 
   // ---- preview ----
   var pv = { items: [], idx: 0, timer: null, playing: true };

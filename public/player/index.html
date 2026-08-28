@@ -75,9 +75,46 @@
 
   var currentVersion = -1;
   var currentPlaylistId = -1;
-  var playlist = [];
+  var allItems = [];   // tudo que veio no manifest
+  var playlist = [];    // subconjunto no ar agora (day-parting)
   var idx = 0;
   var advanceTimer = null;
+  var activeSig = '';   // assinatura do subconjunto ativo, p/ detectar mudanca
+  var manifestName = null;
+
+  // ---- day-parting: espelha src/lib/schedule.js, avaliado no relogio local ----
+  function schedToMinutes(hhmm) {
+    var m = /^(\d{1,2}):([0-5]\d)$/.exec(String(hhmm).trim());
+    if (!m) return null;
+    var h = +m[1], mi = +m[2];
+    if (h > 24 || (h === 24 && mi !== 0)) return null;
+    return h * 60 + mi;
+  }
+  function isoDay(d) { return ((d.getDay() + 6) % 7) + 1; }
+  function ymd(d) {
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+  function scheduleActive(s, date) {
+    if (s == null) return true;
+    if (typeof s === 'string') { try { s = JSON.parse(s); } catch (e) { return true; } if (s == null) return true; }
+    var d = date || new Date();
+    var day = ymd(d);
+    if (s.from && day < s.from) return false;
+    if (s.until && day > s.until) return false;
+    var start = s.start ? schedToMinutes(s.start) : 0;
+    var end = s.end ? schedToMinutes(s.end) : 1440;
+    if (end === 0) end = 1440;
+    var now = d.getHours() * 60 + d.getMinutes();
+    var days = (s.days && s.days.length) ? s.days : null;
+    var today = isoDay(d), yesterday = ((today + 5) % 7) + 1;
+    if (start <= end) {
+      return (now >= start && now < end) && (!days || days.indexOf(today) >= 0);
+    }
+    if (now >= start) return !days || days.indexOf(today) >= 0;
+    if (now < end) return !days || days.indexOf(yesterday) >= 0;
+    return false;
+  }
 
   function detectPlayerType() {
     var ua = navigator.userAgent;
@@ -141,23 +178,41 @@
     currentVersion = m.version;
     currentPlaylistId = m.playlist ? m.playlist.id : 0;
     if (playlistChanged) idx = 0;
-    playlist = (m.items || []).slice();
-    badge.textContent =
-      device.serial + ' · v' + m.version + ' · ' + playlist.length + ' item(s)';
+    allItems = (m.items || []).slice();
+    manifestName = m.playlist ? m.playlist.name : null;
+    recomputeActive(true);
+  }
 
-    if (!playlist.length) {
-      showStatus(true);
-      setStatus(
-        m.playlist ? 'Playlist "' + m.playlist.name + '" sem itens' : 'Aguardando conteudo',
-        'Serial: ' + device.serial
-      );
-      clearTimeout(advanceTimer);
-      stage.innerHTML = '';
+  // Recalcula o subconjunto no ar agora (day-parting). `force` re-renderiza
+  // sempre; senao so quando o conjunto ativo muda.
+  function recomputeActive(force) {
+    var now = new Date();
+    var active = allItems.filter(function (it) { return scheduleActive(it.schedule, now); });
+    var sig = active.map(function (it) { return it.id; }).join(',');
+    var changed = sig !== activeSig;
+    activeSig = sig;
+    playlist = active;
+    badge.textContent = device.serial + ' · v' + currentVersion + ' · ' +
+      active.length + '/' + allItems.length + ' no ar';
+
+    if (!allItems.length) {
+      idle(manifestName ? 'Playlist "' + manifestName + '" sem itens' : 'Aguardando conteudo');
+      return;
+    }
+    if (!active.length) {
+      idle('Nada programado para agora');
       return;
     }
     showStatus(false);
-    idx = idx % playlist.length;
-    render();
+    idx = idx % active.length;
+    if (force || changed) render();
+  }
+
+  function idle(msg) {
+    showStatus(true);
+    setStatus(msg, 'Serial: ' + device.serial);
+    clearTimeout(advanceTimer);
+    stage.innerHTML = '';
   }
 
   function render() {
@@ -189,6 +244,7 @@
   }
 
   function next() {
+    if (!playlist.length) return;
     idx = (idx + 1) % playlist.length;
     render();
   }
@@ -223,6 +279,8 @@
         heartbeat();
         setInterval(poll, POLL_MS);
         setInterval(heartbeat, HEARTBEAT_MS);
+        // day-parting: reavalia o que esta no ar a cada 20s, sem esperar novo manifest
+        setInterval(function () { recomputeActive(false); }, 20000);
       })
       .catch(function (e) {
         setStatus('Falha ao parear', String(e.message || e));

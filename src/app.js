@@ -26,7 +26,7 @@ function createApp() {
 
   // Health — sem auth.
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M5' });
+    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M6' });
   });
 
   // Auth.
@@ -79,7 +79,7 @@ function createApp() {
 
   app.get('/', (req, res) => {
     res.type('text/plain').send(
-      `${pkg.name} v${pkg.version} — M4 (dispositivos)\n\n` +
+      `${pkg.name} v${pkg.version} — M6 (day-parting)\n\n` +
         `player kiosk : /player/\n` +
         `admin        : /admin/\n` +
         `health       : /api/health\n`

@@ -4,6 +4,7 @@ const express = require('express');
 const { getDb } = require('../db');
 const { requireAuth, writeGuard } = require('../auth/middleware');
 const { buildPlaylistManifest } = require('../lib/manifest');
+const { validateSchedule, isActive } = require('../lib/schedule');
 
 const router = express.Router();
 router.use(requireAuth, writeGuard('playlists:write'));
@@ -22,16 +23,22 @@ function bumpVersion(db, playlistId) {
 }
 
 function itemsOf(db, playlistId) {
+  const now = new Date();
   return db
     .prepare(
-      `SELECT pi.id, pi.asset_id, pi.ordem, pi.duration,
+      `SELECT pi.id, pi.asset_id, pi.ordem, pi.duration, pi.schedule,
               a.type, a.filename, a.url, a.hash, a.size_bytes
          FROM playlist_items pi
          JOIN assets a ON a.id = pi.asset_id
         WHERE pi.playlist_id = ?
         ORDER BY pi.ordem, pi.id`
     )
-    .all(playlistId);
+    .all(playlistId)
+    .map((r) => {
+      let schedule = null;
+      if (r.schedule) { try { schedule = JSON.parse(r.schedule); } catch { schedule = null; } }
+      return { ...r, schedule, active_now: isActive(schedule, now) };
+    });
 }
 
 // POST /api/playlists  { name }
@@ -74,12 +81,20 @@ router.get('/:id', (req, res) => {
   res.json({ playlist, items: itemsOf(db, playlist.id) });
 });
 
-// GET /api/playlists/:id/manifest  -> mesmo shape do manifest de device (preview)
+// GET /api/playlists/:id/manifest[?active_at=<ISO>]
+// preview: mesmo shape do manifest de device; com active_at filtra o day-parting.
 router.get('/:id/manifest', (req, res) => {
   const db = getDb();
   const playlist = getPlaylistScoped(db, req.params.id, req.auth.companyId);
   if (!playlist) return res.status(404).json({ error: 'playlist nao encontrada' });
-  res.json(buildPlaylistManifest(playlist));
+
+  let activeAt;
+  if (req.query.active_at != null) {
+    const d = req.query.active_at === 'now' ? new Date() : new Date(req.query.active_at);
+    if (isNaN(d.getTime())) return res.status(400).json({ error: 'active_at invalido (ISO ou "now")' });
+    activeAt = d;
+  }
+  res.json(buildPlaylistManifest(playlist, activeAt));
 });
 
 // PATCH /api/playlists/:id  { name }
@@ -95,7 +110,7 @@ router.patch('/:id', (req, res) => {
   res.json({ playlist: getPlaylistScoped(db, playlist.id, req.auth.companyId) });
 });
 
-// POST /api/playlists/:id/items  { asset_id, duration?, ordem? }
+// POST /api/playlists/:id/items  { asset_id, duration?, ordem?, schedule? }
 router.post('/:id/items', (req, res) => {
   const db = getDb();
   const playlist = getPlaylistScoped(db, req.params.id, req.auth.companyId);
@@ -107,6 +122,9 @@ router.post('/:id/items', (req, res) => {
     .prepare('SELECT * FROM assets WHERE id = ? AND company_id = ?')
     .get(assetId, req.auth.companyId);
   if (!asset) return res.status(400).json({ error: 'asset_id invalido' });
+
+  const sched = validateSchedule(req.body ? req.body.schedule : undefined);
+  if (!sched.ok) return res.status(400).json({ error: sched.error });
 
   let ordem = req.body.ordem;
   if (ordem === undefined || ordem === null) {
@@ -122,10 +140,10 @@ router.post('/:id/items', (req, res) => {
   try {
     const info = db
       .prepare(
-        `INSERT INTO playlist_items (playlist_id, asset_id, ordem, duration)
-         VALUES (?, ?, ?, ?)`
+        `INSERT INTO playlist_items (playlist_id, asset_id, ordem, duration, schedule)
+         VALUES (?, ?, ?, ?, ?)`
       )
-      .run(playlist.id, assetId, ordem, duration);
+      .run(playlist.id, assetId, ordem, duration, sched.value ? JSON.stringify(sched.value) : null);
     bumpVersion(db, playlist.id);
     db.exec('COMMIT');
     res.status(201).json({
@@ -138,7 +156,8 @@ router.post('/:id/items', (req, res) => {
   }
 });
 
-// PATCH /api/playlists/:id/items/:itemId  { duration?, ordem? }
+// PATCH /api/playlists/:id/items/:itemId  { duration?, ordem?, schedule? }
+// schedule: objeto p/ definir, null p/ limpar (sempre no ar).
 router.patch('/:id/items/:itemId', (req, res) => {
   const db = getDb();
   const playlist = getPlaylistScoped(db, req.params.id, req.auth.companyId);
@@ -161,6 +180,11 @@ router.patch('/:id/items/:itemId', (req, res) => {
     const o = Number(b.ordem);
     if (!Number.isInteger(o) || o < 0) return res.status(400).json({ error: 'ordem invalida' });
     sets.push('ordem = ?'); vals.push(o);
+  }
+  if (b.schedule !== undefined) {
+    const s = validateSchedule(b.schedule);
+    if (!s.ok) return res.status(400).json({ error: s.error });
+    sets.push('schedule = ?'); vals.push(s.value ? JSON.stringify(s.value) : null);
   }
   if (!sets.length) return res.status(400).json({ error: 'nada para atualizar' });
 
@@ -274,14 +298,21 @@ router.put('/:id/items', (req, res) => {
     return res.status(400).json({ error: 'algum asset_id e invalido' });
   }
 
+  const schedules = [];
+  for (const it of items) {
+    const s = validateSchedule(it.schedule);
+    if (!s.ok) return res.status(400).json({ error: s.error });
+    schedules.push(s.value ? JSON.stringify(s.value) : null);
+  }
+
   db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM playlist_items WHERE playlist_id = ?').run(playlist.id);
     const ins = db.prepare(
-      `INSERT INTO playlist_items (playlist_id, asset_id, ordem, duration) VALUES (?, ?, ?, ?)`
+      `INSERT INTO playlist_items (playlist_id, asset_id, ordem, duration, schedule) VALUES (?, ?, ?, ?, ?)`
     );
     items.forEach((it, idx) => {
-      ins.run(playlist.id, Number(it.asset_id), idx, it.duration != null ? Number(it.duration) : 10);
+      ins.run(playlist.id, Number(it.asset_id), idx, it.duration != null ? Number(it.duration) : 10, schedules[idx]);
     });
     bumpVersion(db, playlist.id);
     db.exec('COMMIT');

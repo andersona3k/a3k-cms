@@ -1,6 +1,7 @@
 'use strict';
 
 const { getDb } = require('../db');
+const { isActive } = require('./schedule');
 
 // Resolve qual playlist um device deve tocar.
 // M1: apenas assignment direto no device. Heranca de grupo entra no M4.
@@ -26,10 +27,11 @@ function resolvePlaylistId(db, device) {
 }
 
 // Itens de uma playlist no formato do manifest (mesmo shape p/ device e preview).
-function playlistManifestItems(db, playlistId) {
+// `activeAt` (Date) opcional: filtra pelo day-parting naquele instante.
+function playlistManifestItems(db, playlistId, activeAt) {
   const rows = db
     .prepare(
-      `SELECT pi.id, pi.ordem, pi.duration,
+      `SELECT pi.id, pi.ordem, pi.duration, pi.schedule,
               a.type, a.filename, a.url, a.hash, a.size_bytes, a.mime
          FROM playlist_items pi
          JOIN assets a ON a.id = pi.asset_id
@@ -38,26 +40,38 @@ function playlistManifestItems(db, playlistId) {
     )
     .all(playlistId);
 
-  return rows.map((r) => ({
-    id: r.id,
-    type: r.type,
-    url: r.url,
-    filename: r.filename,
-    mime: r.mime,
-    duration: r.duration != null ? r.duration : 10,
-    hash: r.hash ? `sha256:${r.hash}` : null,
-    bytes: r.size_bytes,
-  }));
+  let items = rows.map((r) => {
+    let schedule = null;
+    if (r.schedule) {
+      try { schedule = JSON.parse(r.schedule); } catch { schedule = null; }
+    }
+    return {
+      id: r.id,
+      type: r.type,
+      url: r.url,
+      filename: r.filename,
+      mime: r.mime,
+      duration: r.duration != null ? r.duration : 10,
+      hash: r.hash ? `sha256:${r.hash}` : null,
+      bytes: r.size_bytes,
+      schedule,
+    };
+  });
+
+  if (activeAt instanceof Date) {
+    items = items.filter((it) => isActive(it.schedule, activeAt));
+  }
+  return items;
 }
 
 // Manifest de uma playlist isolada (usado pelo preview do admin).
-function buildPlaylistManifest(playlist) {
+function buildPlaylistManifest(playlist, activeAt) {
   const db = getDb();
   return {
     playlist: { id: playlist.id, name: playlist.name },
     version: playlist.version,
     generatedAt: new Date().toISOString(),
-    items: playlistManifestItems(db, playlist.id),
+    items: playlistManifestItems(db, playlist.id, activeAt),
   };
 }
 

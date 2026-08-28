@@ -99,9 +99,37 @@ Sem metadados (ffprobe/sharp fica no M2), sem drag-drop (M3), sem grupos (M4).
 - `/admin/`: card "5 · Administracao" (Empresas [superadmin], Papeis com
   checkboxes de permissao, Usuarios) + seletor de empresa no cabecalho.
 
+### M6 — Day-parting (concluido)
+
+- Cada `playlist_item` tem um `schedule` (JSON, coluna reservada desde o 001):
+  ```
+  schedule = null                     -> sempre no ar
+  schedule = {
+    days:  [1..7],       // ISO: 1=segunda..7=domingo. Ausente/vazio = todos.
+    start: "HH:MM",       // hora local. Ausente = 00:00.
+    end:   "HH:MM",       // hora local. Ausente = 24:00. start > end = vira a meia-noite.
+    from:  "YYYY-MM-DD",  // primeira data (inclusive), opcional
+    until: "YYYY-MM-DD"   // ultima data (inclusive), opcional
+  }
+  ```
+  Numa janela virada (22:00-06:00), `days` = o dia em que a janela COMECA.
+- `src/lib/schedule.js`: `validateSchedule` (normaliza, dropa filtros vazios,
+  rejeita horas/dias/datas invalidas) e `isActive(schedule, date)`.
+- `schedule` entra em `POST`/`PATCH`/`PUT` de itens (PATCH aceita `null` p/
+  limpar). Toda mudanca bumpa a `version`.
+- **Avaliado no relogio LOCAL do player**: o manifest de device carrega
+  `schedule` por item e NAO filtra; o player (`public/player/index.html`)
+  reavalia o subconjunto no ar a cada 20s. Fora de qualquer janela ->
+  "Nada programado para agora".
+- `GET /api/playlists/:id/manifest?active_at=<ISO>|now` filtra server-side
+  (preview "como fica as 14h"). `GET /api/playlists/:id` traz `active_now` por item.
+- `/admin/`: coluna **Horario** por item (resumo + bolinha no ar/fora) + editor
+  (dias, inicio/fim, intervalo de datas).
+
 ### Proximos
 
-M6 day-parting, Fase 3 apps nativos.
+Fase 3 — apps nativos (APK Android, .wgt Tizen assinado, app webOS, player
+Windows). Trilho separado; so os nativos entregam offline real.
 
 ## Setup
 
@@ -142,10 +170,10 @@ Superadmin manda `X-Company-Id` p/ atuar em outra empresa.
 | DELETE | `/api/folders/:id[?force=true]` | apaga (409 se nao vazia) |
 | POST | `/api/playlists` | `{name}` -> playlist |
 | GET  | `/api/playlists` · `/api/playlists/:id` | lista / detalhe com itens |
-| GET  | `/api/playlists/:id/manifest` | preview: mesmo shape do manifest de device |
-| POST | `/api/playlists/:id/items` | `{asset_id,duration?,ordem?}` (bumpa version) |
-| PATCH | `/api/playlists/:id/items/:itemId` | `{duration?,ordem?}` (bumpa version) |
-| PUT  | `/api/playlists/:id/items` | `{items:[{asset_id,duration}]}` substitui tudo |
+| GET  | `/api/playlists/:id/manifest[?active_at=<ISO>\|now]` | preview; com `active_at` filtra o day-parting |
+| POST | `/api/playlists/:id/items` | `{asset_id,duration?,ordem?,schedule?}` (bumpa version) |
+| PATCH | `/api/playlists/:id/items/:itemId` | `{duration?,ordem?,schedule?}` (`schedule:null` limpa) |
+| PUT  | `/api/playlists/:id/items` | `{items:[{asset_id,duration,schedule?}]}` substitui tudo |
 | PUT  | `/api/playlists/:id/order` | `{item_ids:[...]}` reordena (bumpa version) |
 | DELETE | `/api/playlists/:id/items/:itemId` | remove item (bumpa version) |
 | GET  | `/api/devices` · `/api/devices/:id` | lista / detalhe (+ `own_playlist`, `effective_playlist`, manifest) |
@@ -197,14 +225,16 @@ src/
     index.js           conexao node:sqlite (WAL, FKs on)
     migrate.js         runner de migrations
     migrations/        001_init · 002_pairing · 003_library · 004_devices · 005_multitenant
+                       (M6 nao tem migration: playlist_items.schedule ja existe do 001)
   auth/                password (scrypt) · jwt · middleware (writeGuard, superadmin) · routes
   adapters/            base + tizen/webos/android/windows (stubs) + registry
   lib/
     ids.js             gerador de serial + token + codigo de pareamento
     company.js         empresa alvo de pair sem codigo + companyCount()
     permissions.js     vocabulario de permissoes + validacao + `grants()`
+    schedule.js        day-parting: validateSchedule + isActive (janela local)
     media.js           storage do multer, hash sha256, dedup
-    manifest.js        manifest de device + manifest de playlist (preview)
+    manifest.js        manifest de device + manifest de playlist (preview, opc. filtrado)
     probe.js           sharp (imagem) + ffprobe (video/audio), normalizacao
     library.js         aplica probe no asset, apaga arquivo orfao
   routes/
@@ -221,7 +251,7 @@ node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m5.test.js   testes de aceite (81 no total)
+  m0..m6.test.js   testes de aceite (94 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -231,7 +261,7 @@ por plataforma. Sem toolchain nativo. `FFPROBE_PATH` no `.env` sobrescreve.
 
 `companies`, `roles` (`permissions` JSON), `users` (`is_superadmin` no M5).
 `folders`, `assets` — biblioteca (colunas de metadados nullable ate o M2).
-`playlists` (com `version`), `playlist_items` (com `schedule` reservado p/ M6).
+`playlists` (com `version`), `playlist_items` (com `schedule` JSON de day-parting, M6).
 `assets` ganhou `format`, `metadata` (dump cru do probe), `probe_status`
 (`pending`/`ok`/`error`/`skipped`) e `probe_error` no M2.
 `device_groups`, `devices` (`serial` unico, `player_type`, `capabilities` JSON,
