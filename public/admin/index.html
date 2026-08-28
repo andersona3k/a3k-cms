@@ -119,6 +119,35 @@
   .histlist { list-style:none; padding:0; margin:6px 0 0; font-size:12px; }
   .histlist li { padding:6px 0; border-bottom:1px solid var(--line); }
   .histlist .who { color:var(--mut); }
+
+  /* ---- Biblioteca em tela cheia: menu de pastas + grade de arquivos ---- */
+  body[data-tab="pane-biblioteca"] main,
+  body[data-tab="pane-biblioteca"] #tabbar { max-width:none; }
+  #libWrap { display:grid; grid-template-columns:270px 1fr; gap:16px; align-items:start; }
+  #libTree { border:1px solid var(--line); border-radius:9px; background:#0d141c; padding:10px; position:sticky; top:12px; }
+  #libTree .thead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  #libTree .thead b { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
+  #libTree .thead button { padding:3px 9px; font-size:12px; }
+  .ftree, .ftree ul { list-style:none; margin:0; padding:0; }
+  .ftree ul { margin-left:12px; border-left:1px solid var(--line); padding-left:4px; }
+  .fnode { display:flex; align-items:center; gap:6px; padding:5px 6px; border-radius:6px; cursor:pointer; font-size:13px; }
+  .fnode:hover { background:#1b2733; }
+  .fnode.sel { background:#1b2c3f; box-shadow:inset 2px 0 0 var(--acc); }
+  .fnode .fname { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .fnode .fcount { color:var(--mut); font-size:11px; }
+  .fnode .fbtn { opacity:0; border:0; background:transparent; color:var(--mut); padding:0 3px; cursor:pointer; font-size:12px; line-height:1; }
+  .fnode:hover .fbtn { opacity:1; }
+  .fnode .fbtn:hover { color:var(--fg); }
+  #libMain .libbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+  #libCrumb { font-weight:700; font-size:15px; }
+  #libCrumb .muted { font-weight:400; }
+  .assetgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:12px; }
+  .atile { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#0d141c; cursor:pointer; }
+  .atile:hover { border-color:var(--acc); }
+  .atile .thumb { height:96px; display:flex; align-items:center; justify-content:center; background:#000; font-size:34px; }
+  .atile .thumb img { width:100%; height:100%; object-fit:cover; }
+  .atile .aname { padding:6px 8px 2px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .atile .abadge { font-size:10px; color:var(--mut); padding:0 8px 7px; display:flex; justify-content:space-between; gap:6px; }
 </style>
 </head>
 <body>
@@ -148,21 +177,23 @@
 <main id="appView" class="hidden">
   <div class="card tabpane" id="pane-biblioteca">
     <h2>Biblioteca</h2>
-    <div class="row">
-      <div><label>Pasta atual</label>
-        <select id="folderSelect"></select></div>
-      <div><label>Nova pasta (dentro da atual)</label><input id="folderName" placeholder="Campanhas" /></div>
-      <button id="folderCreateBtn">Criar pasta</button>
-      <button class="danger" id="folderDeleteBtn">Apagar pasta atual</button>
+    <div id="libWrap">
+      <div id="libTree">
+        <div class="thead"><b>Pastas</b>
+          <button class="ghost" id="folderRootBtn" title="nova pasta na raiz">+ pasta</button></div>
+        <ul class="ftree" id="ftreeRoot"></ul>
+      </div>
+      <div id="libMain">
+        <div class="libbar">
+          <span id="libCrumb">—</span>
+          <span style="flex:1"></span>
+          <input type="file" id="file" multiple />
+          <button id="uploadBtn">Enviar para esta pasta</button>
+        </div>
+        <div class="assetgrid" id="assetGrid"></div>
+        <p class="muted" id="libEmpty" style="display:none">Pasta vazia. Envie arquivos ou crie subpastas.</p>
+      </div>
     </div>
-    <div class="row" style="margin-top:10px">
-      <div><label>Arquivo (imagem / video / audio)</label><input type="file" id="file" /></div>
-      <button id="uploadBtn">Enviar para a pasta atual</button>
-    </div>
-    <table id="assetsTbl"><thead><tr>
-      <th>ID</th><th>Arquivo</th><th>Tipo</th><th>Formato</th><th>Resolucao</th><th>Duracao</th><th>Tamanho</th><th>Metadados</th>
-    </tr></thead><tbody></tbody></table>
-    <p class="muted">Clique numa linha para o painel de info.</p>
   </div>
 
   <div class="card tabpane" id="pane-playlist">
@@ -411,95 +442,202 @@
   };
   $('logoutBtn').onclick = function () { token = ''; localStorage.removeItem('a3k_admin_token'); showApp(false); };
 
-  // ---- pastas ----
-  function folderLabel(f) {
-    var depth = 0, cur = f, byId = {};
-    state.folders.forEach(function (x) { byId[x.id] = x; });
-    while (cur && cur.parent_id) { depth++; cur = byId[cur.parent_id]; }
-    return '  '.repeat(depth) + f.name + ' (' + f.asset_count + ')';
+  // ---- pastas (arvore) ----
+  var MAX_DEPTH = 3;            // Geral (nivel 1) + ate 2 subniveis
+  var _geralTried = false;
+
+  function foldersBy() { var m = {}; state.folders.forEach(function (f) { m[f.id] = f; }); return m; }
+  function folderDepth(f) {
+    var d = 1, by = foldersBy(), cur = f;
+    while (cur && cur.parent_id) { d++; cur = by[cur.parent_id]; }
+    return d;
   }
-  function loadFolders() {
-    return api('/api/folders').then(function (d) {
-      state.folders = d.folders;
-      var sel = $('folderSelect'); var prev = state.currentFolder;
-      sel.innerHTML = '<option value="">— (raiz / sem pasta)</option>';
-      d.folders.forEach(function (f) {
-        var o = document.createElement('option'); o.value = f.id; o.textContent = folderLabel(f);
-        sel.appendChild(o);
+  function folderChildren(pid) {
+    return state.folders
+      .filter(function (f) { return (f.parent_id || null) === (pid || null); })
+      .sort(function (a, b) {
+        if (!pid) { if (a.name === 'Geral') return -1; if (b.name === 'Geral') return 1; }
+        return a.name.localeCompare(b.name, 'pt');
       });
-      sel.value = d.folders.some(function (f) { return String(f.id) === String(prev); }) ? prev : '';
-      state.currentFolder = sel.value;
-    });
   }
-  $('folderSelect').onchange = function () { state.currentFolder = this.value; loadAssets(); };
-  $('folderCreateBtn').onclick = function () {
-    var name = $('folderName').value.trim(); if (!name) return;
+  function assetCountIn(folderId) {
+    var fid = folderId === '' ? null : Number(folderId);
+    return (state.assets || []).filter(function (a) { return (a.folder_id || null) === fid; }).length;
+  }
+  function folderPath(folderId) {
+    var by = foldersBy(), out = [], cur = by[folderId];
+    while (cur) { out.unshift(cur.name); cur = by[cur.parent_id]; }
+    return out.join(' / ');
+  }
+  function renderTree() {
+    var rootUl = $('ftreeRoot');
+    if (!rootUl) return;
+    rootUl.innerHTML = '';
+    folderChildren(null).forEach(function (f) { rootUl.appendChild(treeNode(f)); });
+    var unf = assetCountIn('');
+    if (unf > 0) {
+      var li = document.createElement('li');
+      var n = document.createElement('div');
+      n.className = 'fnode' + (state.currentFolder === '' ? ' sel' : '');
+      n.innerHTML = '<span class="fname">🗂️ (sem pasta)</span><span class="fcount">' + unf + '</span>';
+      n.onclick = function () { selectFolder(''); };
+      li.appendChild(n); rootUl.appendChild(li);
+    }
+    $('libCrumb').innerHTML = state.currentFolder === ''
+      ? '<span class="muted">(sem pasta)</span>'
+      : esc(folderPath(state.currentFolder) || '-');
+  }
+  function treeNode(f) {
+    var li = document.createElement('li');
+    var n = document.createElement('div');
+    n.className = 'fnode' + (String(f.id) === String(state.currentFolder) ? ' sel' : '');
+    var label = document.createElement('span'); label.className = 'fname';
+    label.textContent = '📁 ' + f.name;
+    var count = document.createElement('span'); count.className = 'fcount';
+    count.textContent = assetCountIn(f.id) || '';
+    n.appendChild(label); n.appendChild(count);
+    if (folderDepth(f) < MAX_DEPTH) {
+      var addb = document.createElement('button'); addb.className = 'fbtn'; addb.textContent = '+'; addb.title = 'nova subpasta';
+      addb.onclick = function (e) { e.stopPropagation(); createFolder(f.id); };
+      n.appendChild(addb);
+    }
+    var renb = document.createElement('button'); renb.className = 'fbtn'; renb.textContent = '✎'; renb.title = 'renomear';
+    renb.onclick = function (e) { e.stopPropagation(); renameFolder(f); };
+    n.appendChild(renb);
+    var delb = document.createElement('button'); delb.className = 'fbtn'; delb.textContent = '🗑'; delb.title = 'apagar';
+    delb.onclick = function (e) { e.stopPropagation(); deleteFolder(f); };
+    n.appendChild(delb);
+    n.onclick = function () { selectFolder(String(f.id)); };
+    li.appendChild(n);
+    var kids = folderChildren(f.id);
+    if (kids.length) {
+      var ul = document.createElement('ul');
+      kids.forEach(function (c) { ul.appendChild(treeNode(c)); });
+      li.appendChild(ul);
+    }
+    return li;
+  }
+  function selectFolder(id) { state.currentFolder = id; renderTree(); loadAssets(); }
+  function createFolder(parentId) {
+    var name = (prompt(parentId ? 'Nome da subpasta' : 'Nome da nova pasta') || '').trim();
+    if (!name) return;
     var body = { name: name };
-    if (state.currentFolder) body.parent_id = Number(state.currentFolder);
+    if (parentId) body.parent_id = Number(parentId);
     jpost('/api/folders', body).then(function (d) {
-      log('pasta #' + d.folder.id + ' "' + d.folder.name + '" criada'); $('folderName').value = '';
-      state.currentFolder = String(d.folder.id); return loadFolders().then(loadAssets);
+      log('pasta "' + d.folder.name + '" criada');
+      state.currentFolder = String(d.folder.id);
+      loadFolders().then(loadAssets);
     }).catch(function (e) { log('pasta: ' + e.message); });
-  };
-  $('folderDeleteBtn').onclick = function () {
-    if (!state.currentFolder) return log('selecione uma pasta (nao a raiz)');
-    var id = state.currentFolder;
-    api('/api/folders/' + id, { method: 'DELETE' }).then(after).catch(function (e) {
+  }
+  function renameFolder(f) {
+    var n = (prompt('Novo nome', f.name) || '').trim();
+    if (!n || n === f.name) return;
+    jpost('/api/folders/' + f.id, { name: n }, 'PATCH')
+      .then(function () { log('pasta renomeada'); loadFolders().then(loadAssets); })
+      .catch(function (e) { log('renomear: ' + e.message); });
+  }
+  function deleteFolder(f) {
+    api('/api/folders/' + f.id, { method: 'DELETE' }).then(after).catch(function (e) {
       if (e.body && e.body.error === 'pasta nao vazia') {
-        if (confirm('Pasta tem ' + e.body.subfolder_count + ' subpasta(s) e ' + e.body.asset_count +
-          ' asset(s). Apagar subpastas e desarquivar os assets?')) {
-          api('/api/folders/' + id + '?force=true', { method: 'DELETE' }).then(after).catch(function (e2) { log(e2.message); });
+        if (confirm('"' + f.name + '" tem ' + e.body.subfolder_count + ' subpasta(s) e ' +
+          e.body.asset_count + ' arquivo(s). Apagar as subpastas e soltar os arquivos?')) {
+          api('/api/folders/' + f.id + '?force=true', { method: 'DELETE' }).then(after)
+            .catch(function (e2) { log(e2.message); });
         }
       } else log('apagar pasta: ' + e.message);
     });
-    function after(d) { log('pasta apagada (' + d.deleted_subfolders + ' sub, ' + d.unfiled_assets + ' desarquivados)');
-      state.currentFolder = ''; loadFolders().then(loadAssets); }
-  };
+    function after(d) {
+      log('pasta apagada (' + d.deleted_subfolders + ' sub, ' + d.unfiled_assets + ' soltos)');
+      if (String(state.currentFolder) === String(f.id)) state.currentFolder = '';
+      loadFolders().then(loadAssets);
+    }
+  }
+  $('folderRootBtn').onclick = function () { createFolder(null); };
+  function assetGlyph(t) { return t === 'video' ? '🎬' : t === 'audio' ? '🎵' : t === 'image' ? '🖼️' : '📄'; }
+  function loadFolders() {
+    return api('/api/folders').then(function (d) {
+      state.folders = d.folders;
+      var hasGeral = state.folders.some(function (f) { return !f.parent_id && f.name === 'Geral'; });
+      if (!hasGeral && !_geralTried) {
+        _geralTried = true;
+        return jpost('/api/folders', { name: 'Geral' })
+          .then(function () { return loadFolders(); })
+          .catch(function () { renderTree(); });
+      }
+      if (state.currentFolder === '' ||
+          !state.folders.some(function (f) { return String(f.id) === String(state.currentFolder); })) {
+        var home = folderChildren(null)[0];
+        state.currentFolder = home ? String(home.id) : '';
+      }
+      renderTree();
+    });
+  }
 
-  // ---- assets ----
+  // ---- arquivos ----
   $('uploadBtn').onclick = function () {
-    var f = $('file').files[0];
-    if (!f) return log('escolha um arquivo');
-    var fd = new FormData(); fd.append('file', f);
-    if (state.currentFolder) fd.append('folder_id', state.currentFolder);
+    var files = Array.prototype.slice.call($('file').files || []);
+    if (!files.length) return log('escolha um ou mais arquivos');
     $('uploadBtn').disabled = true;
-    var big = f.type.indexOf('video') === 0;
-    log('enviando ' + f.name + (big ? ' — vídeo pode levar alguns minutos (convertendo p/ formato universal)…' : '…'));
-    api('/api/assets', { method: 'POST', body: fd })
-      .then(function (d) {
-        log('asset #' + d.asset.id + (d.deduped ? ' (dedup)' : ' pronto — probe=' + d.asset.probe_status +
-          ', ' + (d.asset.codec || '?') + (d.asset.width ? ' ' + d.asset.width + '×' + d.asset.height : '')));
-        $('file').value = ''; return loadFolders().then(loadAssets);
-      })
-      .catch(function (e) { log('upload: ' + e.message); })
-      .finally(function () { $('uploadBtn').disabled = false; });
+    var idx = 0, okN = 0;
+    (function next() {
+      if (idx >= files.length) {
+        $('file').value = '';
+        $('uploadBtn').disabled = false;
+        log('upload: ' + okN + '/' + files.length + ' ok');
+        loadFolders().then(loadAssets);
+        return;
+      }
+      var f = files[idx++];
+      var fd = new FormData(); fd.append('file', f);
+      if (state.currentFolder) fd.append('folder_id', state.currentFolder);
+      var big = f.type.indexOf('video') === 0;
+      log('enviando ' + f.name + (big ? ' (video pode demorar, convertendo p/ formato universal)...' : '...'));
+      api('/api/assets', { method: 'POST', body: fd })
+        .then(function (d) {
+          okN++;
+          log('  #' + d.asset.id + (d.deduped ? ' (dedup)' : ' ok ' + (d.asset.codec || d.asset.type) +
+            (d.asset.width ? ' ' + d.asset.width + 'x' + d.asset.height : '')));
+        })
+        .catch(function (e) { log('  ' + f.name + ': ' + e.message); })
+        .finally(next);
+    })();
   };
 
   function resOf(a) { return (a.width && a.height) ? a.width + '×' + a.height : '—'; }
   function durOf(a) { return a.duration != null ? Number(a.duration).toFixed(2) + 's' : '—'; }
 
   function loadAssets() {
-    var q = state.currentFolder ? ('?folder_id=' + state.currentFolder) : '?folder_id=unfiled';
-    return api('/api/assets' + q).then(function (d) {
+    return api('/api/assets').then(function (d) {
       state.assets = d.assets;
-      var tb = $('assetsTbl').querySelector('tbody'); tb.innerHTML = '';
-      d.assets.forEach(function (a) {
-        var tr = document.createElement('tr'); tr.className = 'clickable';
-        tr.innerHTML =
-          '<td>' + a.id + '</td><td>' + esc(a.filename) + '</td><td>' + a.type +
-          '</td><td>' + (a.format || '—') + '</td><td>' + resOf(a) + '</td><td>' + durOf(a) +
-          '</td><td>' + fmtBytes(a.size_bytes) + '</td><td><span class="pill ' + a.probe_status + '">' + a.probe_status + '</span></td>';
-        tr.onclick = function () { openInfo(a.id); };
-        tb.appendChild(tr);
-      });
-      // seletor de asset da playlist = todos os assets da empresa
-      return api('/api/assets').then(function (all) {
-        var sel = $('plAsset'); sel.innerHTML = '';
-        all.assets.forEach(function (a) {
+
+      var plSel = $('plAsset');
+      if (plSel) {
+        plSel.innerHTML = '';
+        d.assets.forEach(function (a) {
           var o = document.createElement('option'); o.value = a.id; o.textContent = '#' + a.id + ' ' + a.filename;
-          sel.appendChild(o);
+          plSel.appendChild(o);
         });
+      }
+
+      renderTree();
+      var grid = $('assetGrid'); if (!grid) return;
+      grid.innerHTML = '';
+      var fid = state.currentFolder === '' ? null : Number(state.currentFolder);
+      var here = d.assets.filter(function (a) { return (a.folder_id || null) === fid; });
+      here.forEach(function (a) {
+        var tile = document.createElement('div'); tile.className = 'atile';
+        var thumb = a.type === 'image'
+          ? '<img src="' + API + a.url + '" alt="" loading="lazy" onerror="this.parentNode.textContent=String.fromCodePoint(0x1F5BC)">'
+          : assetGlyph(a.type);
+        tile.innerHTML =
+          '<div class="thumb">' + thumb + '</div>' +
+          '<div class="aname" title="' + esc(a.filename) + '">' + esc(a.filename) + '</div>' +
+          '<div class="abadge"><span>' + esc(a.type) + (a.width ? ' - ' + resOf(a) : '') + '</span>' +
+          '<span>' + fmtBytes(a.size_bytes) + '</span></div>';
+        tile.onclick = function () { openInfo(a.id); };
+        grid.appendChild(tile);
       });
+      $('libEmpty').style.display = here.length ? 'none' : 'block';
     });
   }
 

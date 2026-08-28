@@ -270,6 +270,11 @@ public/
                        alvo x versao no player, mover de grupo + playlist propria
                        com "Salvar", e as ultimas 5 mudancas (activity_log) com
                        o e-mail de quem fez. "+ Grupo" / "+ Dispositivo" na toolbar.
+                       Aba Biblioteca = tela cheia: menu de pastas em arvore a
+                       esquerda (pasta "Geral" garantida na raiz; subpastas ate 3
+                       niveis) + grade de arquivos em icone/miniatura a direita
+                       (clique abre o painel de info). Upload multiplo p/ a pasta
+                       selecionada.
 node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
