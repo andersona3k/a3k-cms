@@ -58,7 +58,7 @@
 (function () {
   'use strict';
 
-  var PLAYER_VERSION = '2026-08-28.6';
+  var PLAYER_VERSION = '2026-08-28.7';
   var API = location.origin;
   var POLL_MS = 15000;
   var HEARTBEAT_MS = 60000;
@@ -361,12 +361,20 @@
       if (!loop) advanceTimer = setTimeout(next, Math.max(dur, 20000));
     } else if (item.type === 'image' || item.type === 'other' || item.type === 'html') {
       var img = document.createElement('img');
-      img.onload = function () { reveal(); preloadNext(); };
-      img.onerror = function () { reveal(); clearTimeout(advanceTimer); advanceTimer = setTimeout(next, 3000); };
+      var imgFail = function () {
+        if (mySeq !== renderSeq) return;
+        reveal(); clearTimeout(advanceTimer);
+        advanceTimer = setTimeout(next, 2000);   // imagem quebrou -> passa pra proxima
+      };
+      img.onload = function () {
+        if (!img.naturalWidth) return imgFail();  // carregou mas nao decodou -> pula
+        reveal(); preloadNext();
+      };
+      img.onerror = imgFail;
       clearStage();
       stage.appendChild(img);
       img.src = API + item.url;
-      setTimeout(reveal, 2000);
+      setTimeout(reveal, 1500);
       advanceTimer = setTimeout(next, dur);
     } else {
       clearStage();

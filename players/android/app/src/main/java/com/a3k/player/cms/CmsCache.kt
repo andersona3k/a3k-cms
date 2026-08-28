@@ -10,6 +10,7 @@ import java.io.FileInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Cache de disco que da OFFLINE REAL ao player web.
@@ -26,6 +27,11 @@ class CmsCache(context: Context) {
     private val root = File(context.filesDir, "cms").apply { mkdirs() }
     private val mediaDir = File(root, "media").apply { mkdirs() }
     private val docDir = File(root, "doc").apply { mkdirs() }
+
+    // 1 lock por arquivo de midia: prefetch + carga real do mesmo asset nao
+    // podem baixar no mesmo .part ao mesmo tempo (dava imagem/tela preta).
+    private val fileLocks = ConcurrentHashMap<String, Any>()
+    private fun lockFor(key: String): Any = fileLocks.getOrPut(key) { Any() }
 
     fun intercept(request: WebResourceRequest): WebResourceResponse? {
         if (!request.method.equals("GET", ignoreCase = true)) return null
@@ -56,12 +62,28 @@ class CmsCache(context: Context) {
         val f = File(mediaDir, safe)
         if (f.exists() && f.length() > 0) return fileResponse(f, mimeOf(safe))
 
-        val tmp = File(mediaDir, "$safe.part")
-        return if (download(url, tmp, emptyMap()) && tmp.renameTo(f)) {
-            fileResponse(f, mimeOf(safe))
-        } else {
-            tmp.delete()
-            null // deixa o WebView tentar; se offline, o <img>/<video> falha e o player avanca
+        // serializa por arquivo: o 2o a chegar espera e encontra o cache pronto
+        synchronized(lockFor(safe)) {
+            if (f.exists() && f.length() > 0) return fileResponse(f, mimeOf(safe))
+            if (f.exists()) f.delete() // arquivo vazio/corrompido de tentativa anterior
+
+            val tmp = File(mediaDir, "$safe.part.${System.nanoTime()}")
+            try {
+                if (!download(url, tmp, emptyMap()) || tmp.length() <= 0L) {
+                    tmp.delete()
+                    return null
+                }
+                if (!tmp.renameTo(f)) {
+                    // renameTo nao sobrescreve em alguns FS Android -> copia
+                    tmp.copyTo(f, overwrite = true)
+                    tmp.delete()
+                }
+                return fileResponse(f, mimeOf(safe))
+            } catch (t: Throwable) {
+                Log.w(TAG, "media() falhou: $url", t)
+                tmp.delete()
+                return null
+            }
         }
     }
 

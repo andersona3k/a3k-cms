@@ -100,7 +100,7 @@
       <div><label>Nova playlist</label><input id="plName" placeholder="Vitrine" /></div>
       <button id="plCreateBtn">Criar</button>
       <div><label>Playlist ativa</label><select id="plSelect"></select></div>
-      <div><label>Orientação (padrão)</label><select id="plRotation">
+      <div><label>Orientação</label><select id="plRotation">
         <option value="0">Horizontal</option>
         <option value="90">V 90°</option>
         <option value="90m">V 90° esp.</option>
@@ -447,6 +447,10 @@
     if (!p) return '0';
     return String(p.rotation || 0) + (p.mirror ? 'm' : '');
   }
+  function oriLabel(rot, mir) {
+    var r = { 0: 'Horizontal', 90: 'V 90°', 180: 'Invertido 180°', 270: 'V 270°' }[Number(rot) || 0] || 'Horizontal';
+    return mir ? r + ' esp.' : r;
+  }
   $('plSelect').onchange = function () {
     state.activePlaylist = Number(this.value);
     var act = state.playlists.find(function (p) { return p.id === state.activePlaylist; });
@@ -503,6 +507,7 @@
     if (!state.activePlaylist) { tb.innerHTML = ''; return Promise.resolve(); }
     return api('/api/playlists/' + state.activePlaylist).then(function (d) {
       tb.innerHTML = '';
+      var plOri = '<span class="muted">' + oriLabel(d.playlist.rotation, d.playlist.mirror) + '</span>';
       d.items.forEach(function (it, idx) {
         var tr = document.createElement('tr');
         tr.setAttribute('data-item', it.id);
@@ -513,15 +518,6 @@
         if (it.width && it.height) {
           fmt = (it.width >= it.height ? 'H' : 'V') + ' ' + it.width + '×' + it.height;
         }
-
-        // Orientacao: value "" herda | "0" | "90" | "90m" (espelhado) | "270"
-        var curOri = it.rotation == null ? '' : String(it.rotation) + (it.mirror ? 'm' : '');
-        function oriOpt(v, label) {
-          return '<option value="' + v + '"' + (v === curOri ? ' selected' : '') + '>' + label + '</option>';
-        }
-        var oriSel = '<select class="oriSel">' +
-          oriOpt('', 'Herda') + oriOpt('0', 'Horizontal') + oriOpt('90', 'V 90°') +
-          oriOpt('90m', 'V 90° esp.') + oriOpt('270', 'V 270°') + '</select>';
 
         // Duracao: video = travada (duracao do arquivo); imagem = editavel
         var durCell = it.duration_locked
@@ -540,23 +536,12 @@
           '<td class="drag" title="arraste">⠿</td><td>' + (idx + 1) + '</td>' +
           '<td' + (it.suspended ? ' style="text-decoration:line-through"' : '') + '>' + esc(it.filename) + '</td>' +
           '<td>' + it.type + '</td><td>' + fmt + '</td>' +
-          '<td>' + oriSel + '</td><td>' + durCell + '</td><td>' + horCell + '</td>' +
+          '<td>' + plOri + '</td><td>' + durCell + '</td><td>' + horCell + '</td>' +
           '<td><button class="ghost sus-btn">' + (it.suspended ? 'Retomar' : 'Suspender') + '</button> ' +
           '<button class="danger del-btn">Remover</button></td>';
         tb.appendChild(tr);
 
         tr.querySelector('.sched-btn').onclick = function (e) { e.preventDefault(); openSchedEditor(it); };
-
-        tr.querySelector('.oriSel').onchange = function () {
-          var v = this.value;
-          var body = v === ''
-            ? { rotation: null, mirror: null }
-            : { rotation: Number(v.replace('m', '')), mirror: v.indexOf('m') >= 0 ? 1 : 0 };
-          jpost('/api/playlists/' + state.activePlaylist + '/items/' + it.id, body, 'PATCH')
-            .then(function (r) { log('item ' + it.id + ' orientação ' + (v || 'herda') + ', v' + r.version);
-              loadPlaylists(); })
-            .catch(function (e) { log('orientação: ' + e.message); loadPlaylistItems(); });
-        };
 
         var di = tr.querySelector('.durInput');
         if (di) di.onchange = function () {
