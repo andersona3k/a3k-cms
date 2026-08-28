@@ -333,9 +333,12 @@
     var fd = new FormData(); fd.append('file', f);
     if (state.currentFolder) fd.append('folder_id', state.currentFolder);
     $('uploadBtn').disabled = true;
+    var big = f.type.indexOf('video') === 0;
+    log('enviando ' + f.name + (big ? ' — vídeo pode levar alguns minutos (convertendo p/ formato universal)…' : '…'));
     api('/api/assets', { method: 'POST', body: fd })
       .then(function (d) {
-        log('asset #' + d.asset.id + (d.deduped ? ' (dedup)' : ' enviado, probe=' + d.asset.probe_status));
+        log('asset #' + d.asset.id + (d.deduped ? ' (dedup)' : ' pronto — probe=' + d.asset.probe_status +
+          ', ' + (d.asset.codec || '?') + (d.asset.width ? ' ' + d.asset.width + '×' + d.asset.height : '')));
         $('file').value = ''; return loadFolders().then(loadAssets);
       })
       .catch(function (e) { log('upload: ' + e.message); })
@@ -399,7 +402,7 @@
         '<label>Renomear</label><input id="infoName" value="' + esc(a.filename) + '" />' +
         '<div class="row" style="margin-top:12px">' +
         '<button id="infoSave">Salvar</button>' +
-        '<button class="ghost" id="infoReprobe">Reprocessar metadados</button>' +
+        '<button class="ghost" id="infoReprobe">Reprocessar / converter</button>' +
         '<button class="danger" id="infoDelete">Apagar asset</button></div>';
       $('infoClose').onclick = function () { p.classList.add('hidden'); };
       $('infoSave').onclick = function () {
