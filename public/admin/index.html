@@ -663,8 +663,12 @@
           ? esc(eff.name) + ' (v' + eff.version + ')<span class="src ' + eff.source + '">' +
             (eff.source === 'group' ? 'herdada' : 'propria') + '</span>'
           : '<span class="muted">nenhuma</span>';
+        var hw = dev.hardware_id || '';
+        var hwShort = hw ? esc(hw.length > 22 ? hw.slice(0, 22) + '…' : hw) : '<span class="muted">—</span>';
         tr.innerHTML =
-          '<td>' + dev.id + '</td><td><code>' + dev.serial + '</code></td><td>' + esc(dev.name || '—') +
+          '<td>' + dev.id + '</td><td><code>' + dev.serial + '</code><br>' +
+          '<span class="muted" style="font-size:11px" title="' + esc(hw) + '">hw: ' + hwShort + '</span></td>' +
+          '<td>' + esc(dev.name || '—') +
           '</td><td>' + dev.player_type + '</td><td><span class="pill">' + dev.status + '</span></td>' +
           '<td></td><td>' + effHtml + '</td><td class="muted">' + (dev.last_seen || '—') + '</td><td></td>';
         var grpTd = tr.children[5], actTd = tr.children[8];
@@ -686,7 +690,15 @@
           call.then(function () { log('device ' + dev.serial + ' -> playlist ' + (psel.value || '—(herda do grupo)'));
             loadDevices(); }).catch(function (e) { log('assign: ' + e.message); });
         };
-        actTd.appendChild(psel); actTd.appendChild(pbtn);
+        var dbtn = document.createElement('button'); dbtn.className = 'danger'; dbtn.textContent = 'apagar';
+        dbtn.onclick = function () {
+          if (!confirm('Apagar o device ' + dev.serial + (dev.name ? ' (' + dev.name + ')' : '') +
+            '? Se o player ainda existir, ele pareia de novo como device novo.')) return;
+          api('/api/devices/' + dev.id, { method: 'DELETE' })
+            .then(function () { log('device ' + dev.serial + ' apagado'); loadDevices(); loadGroups(); })
+            .catch(function (e) { log('apagar device: ' + e.message); });
+        };
+        actTd.appendChild(psel); actTd.appendChild(pbtn); actTd.appendChild(dbtn);
         tb.appendChild(tr);
       });
     });

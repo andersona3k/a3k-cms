@@ -141,4 +141,24 @@ router.delete('/:id/assign', (req, res) => {
   res.json({ ok: true });
 });
 
+// DELETE /api/devices/:id  — remove o device (e seu assignment proprio).
+// O player fisico, no proximo poll, toma 401 e pareia de novo (novo registro).
+router.delete('/:id', (req, res) => {
+  const db = getDb();
+  const device = scoped(db, req.params.id, req.auth.companyId);
+  if (!device) return res.status(404).json({ error: 'device nao encontrado' });
+  db.exec('BEGIN');
+  try {
+    db.prepare(
+      `DELETE FROM assignments WHERE company_id = ? AND target_type = 'device' AND target_id = ?`
+    ).run(req.auth.companyId, device.id);
+    db.prepare('DELETE FROM devices WHERE id = ?').run(device.id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  res.json({ ok: true });
+});
+
 module.exports = router;

@@ -2,6 +2,7 @@ package com.a3k.player.cms
 
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.net.Uri
 
 /** Configuracao persistida do player. */
 object Prefs {
@@ -40,10 +41,14 @@ object Prefs {
         else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
     }
 
-    /** URL que o WebView carrega. Anexa ?code= so quando ha codigo configurado. */
+    /**
+     * URL que o WebView carrega. Sempre injeta ?hw= (identidade fisica do
+     * aparelho); anexa &code= so quando ha codigo de pareamento configurado.
+     */
     fun playerUrl(c: Context): String {
-        val base = cmsUrl(c)
-        val code = pairCode(c)
-        return if (code.isEmpty()) "$base/player/" else "$base/player/?code=$code"
+        val b = Uri.parse(cmsUrl(c) + "/player/").buildUpon()
+        b.appendQueryParameter("hw", DeviceId.get(c))
+        pairCode(c).takeIf { it.isNotEmpty() }?.let { b.appendQueryParameter("code", it) }
+        return b.build().toString()
     }
 }

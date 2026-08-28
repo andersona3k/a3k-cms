@@ -197,3 +197,18 @@ test('endpoints de grupo exigem JWT', async () => {
   assert.equal((await req('GET', '/api/device-groups', { auth: false })).status, 401);
   assert.equal((await req('POST', '/api/pair/requests', { auth: false, json: {} })).status, 401);
 });
+
+test('DELETE /api/devices/:id remove o device e seu assignment', async () => {
+  const d = (await req('POST', '/api/pair/new', { auth: false, json: { hardware_id: 'hw-del' } })).body.deviceId;
+  const pl = (await req('POST', '/api/playlists', { json: { name: 'PL-dev-del' } })).body.playlist.id;
+  await req('POST', `/api/devices/${d}/assign`, { json: { playlist_id: pl } });
+
+  const del = await req('DELETE', `/api/devices/${d}`);
+  assert.equal(del.status, 200);
+  assert.equal((await req('GET', `/api/devices/${d}`)).status, 404);
+  const gone = getDb().prepare(
+    `SELECT COUNT(*) n FROM assignments WHERE target_type='device' AND target_id=?`
+  ).get(d).n;
+  assert.equal(gone, 0);
+  assert.equal((await req('DELETE', `/api/devices/${d}`)).status, 404);
+});

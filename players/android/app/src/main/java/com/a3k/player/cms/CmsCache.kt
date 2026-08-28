@@ -168,12 +168,19 @@ class CmsCache(context: Context) {
 
     // ---------------- helpers ----------------
 
+    /** O WebView so renderiza com o MIME "puro" (sem "; charset=..."). */
+    private fun cleanMime(raw: String?, fallback: String = "application/octet-stream"): String {
+        val m = raw?.substringBefore(';')?.trim()?.lowercase()
+        return if (m.isNullOrEmpty()) fallback else m
+    }
+
     private fun fileResponse(f: File, mime: String) =
-        WebResourceResponse(mime, null, 200, "OK", corsHeaders(), FileInputStream(f))
+        WebResourceResponse(cleanMime(mime), null, 200, "OK", corsHeaders(), FileInputStream(f))
 
     private fun bytesResponse(mime: String, code: Int, reason: String, body: ByteArray) =
         WebResourceResponse(
-            mime, "utf-8", code, reason.ifBlank { "OK" }, corsHeaders(), ByteArrayInputStream(body)
+            cleanMime(mime, "text/plain"), "utf-8", code, reason.ifBlank { "OK" },
+            corsHeaders(), ByteArrayInputStream(body)
         )
 
     private fun corsHeaders() = mutableMapOf(

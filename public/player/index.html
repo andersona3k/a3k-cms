@@ -58,6 +58,11 @@
   var statusHint = document.getElementById('statusHint');
   var badge = document.getElementById('badge');
 
+  function urlParam(name) {
+    var m = new RegExp('[?#&]' + name + '=([^&#]+)').exec(location.href);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
   var device = {
     id: LS.get('a3k_device_id'),
     token: LS.get('a3k_token'),
@@ -65,21 +70,30 @@
     hardwareId: LS.get('a3k_hw') || null,
   };
 
-  // codigo de pareamento (fluxo "Add player"): da URL (?code= ou #code=) ou salvo.
-  // so vale enquanto o device ainda nao tem token.
-  function pairCode() {
-    var m = /[?#&]code=([A-Za-z0-9-]+)/.exec(location.href);
-    var fromUrl = m ? m[1] : null;
-    if (fromUrl) LS.set('a3k_code', fromUrl);
-    return device.token ? null : (fromUrl || LS.get('a3k_code') || null);
+  // Identidade fisica injetada pelo app nativo (?hw=). Tem prioridade sobre o
+  // valor salvo: se mudou (ex.: imagem de disco clonada para outro aparelho),
+  // descarta o pareamento antigo e pareia de novo com o hw real.
+  var injectedHw = urlParam('hw');
+  if (injectedHw && injectedHw !== device.hardwareId) {
+    LS.set('a3k_device_id', ''); LS.set('a3k_token', ''); LS.set('a3k_serial', '');
+    device.id = null; device.token = null; device.serial = null;
+    device.hardwareId = injectedHw;
+    LS.set('a3k_hw', injectedHw);
   }
-
   if (!device.hardwareId) {
     device.hardwareId =
       (self.crypto && crypto.randomUUID)
         ? crypto.randomUUID()
         : 'hw-' + Date.now() + '-' + Math.random().toString(16).slice(2);
     LS.set('a3k_hw', device.hardwareId);
+  }
+
+  // codigo de pareamento (fluxo "Add player"): da URL (?code= ou #code=) ou salvo.
+  // so vale enquanto o device ainda nao tem token.
+  function pairCode() {
+    var fromUrl = urlParam('code');
+    if (fromUrl) LS.set('a3k_code', fromUrl);
+    return device.token ? null : (fromUrl || LS.get('a3k_code') || null);
   }
 
   var currentVersion = -1;
@@ -239,12 +253,27 @@
       var v = document.createElement('video');
       v.src = API + item.url;
       v.autoplay = true; v.muted = true; v.playsInline = true; v.controls = false;
-      v.onended = next;
-      v.onerror = function () { advanceTimer = setTimeout(next, 3000); };
+      v.preload = 'auto';
+      v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
+      var single = playlist.length === 1;
+      if (single) {
+        v.loop = true;                 // 1 item: loop nativo, sem tela preta no fim
+      } else {
+        v.onended = next;
+      }
+      v.onerror = function () { clearTimeout(advanceTimer); advanceTimer = setTimeout(next, 3000); };
+      v.oncanplay = function () { v.play().catch(function () {}); };
+      v.onloadedmetadata = function () {
+        if (single) return;
+        // avanca pela duracao real do video (nao pelo campo "duration" da playlist)
+        var ms = (v.duration && isFinite(v.duration) ? v.duration : (dur / 1000)) * 1000 + 1500;
+        clearTimeout(advanceTimer);
+        advanceTimer = setTimeout(next, ms);
+      };
       stage.appendChild(v);
       v.play().catch(function () {});
-      // teto de seguranca caso o video nao dispare onended
-      advanceTimer = setTimeout(next, Math.max(dur, 60000));
+      // teto ate os metadados carregarem
+      if (!single) advanceTimer = setTimeout(next, Math.max(dur, 15000));
     } else if (item.type === 'image' || item.type === 'other' || item.type === 'html') {
       var img = document.createElement('img');
       img.src = API + item.url;
