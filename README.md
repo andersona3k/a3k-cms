@@ -256,9 +256,12 @@ src/
 public/
   player/index.html    player kiosk (vanilla) — segue ?p= p/ detectar troca de playlist
   admin/index.html     painel em ABAS (Biblioteca · Playlists · Dispositivos ·
-                       Administracao) + barra de Log retratil no rodape. Aba lembrada
-                       em localStorage e no hash da URL (#pane-playlist etc.); a aba
-                       Administracao so aparece com permissao roles/users:manage.
+                       Administracao) no <header> fixo/sticky (ao lado do seletor
+                       de empresa; slot #brandLogo reservado p/ logo a esquerda;
+                       aba ativa = fundo claro + fonte escura) + barra de Log
+                       retratil no rodape. Aba lembrada em localStorage e no hash
+                       da URL (#pane-playlist etc.); a aba Administracao so aparece
+                       com permissao roles/users:manage.
                        Aba Dispositivos = tela cheia, visao unificada grupo+players:
                        cada grupo e uma linha-mae (playlist atual + "Salvar",
                        renomear, apagar) e os players entram nas linhas abaixo.

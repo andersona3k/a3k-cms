@@ -8,16 +8,17 @@
   :root { --bg:#0f151c; --card:#161f2a; --line:#25333f; --fg:#e6edf3; --mut:#8fa3b5; --acc:#3b82f6; --warn:#e0a12f; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui,sans-serif; }
-  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; gap:16px; align-items:center; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line); display:flex; gap:18px; align-items:center;
+    min-height:74px; position:sticky; top:0; z-index:20; background:var(--bg); flex-wrap:wrap; }
   header b { font-size:16px; }
+  #brandLogo { display:flex; align-items:center; gap:8px; min-width:130px; min-height:44px; }
   main { max-width:1040px; margin:0 auto; padding:20px; display:grid; gap:16px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
-  #tabbar { max-width:1040px; margin:12px auto -4px; padding:0 20px; display:flex; gap:4px; flex-wrap:wrap;
-    border-bottom:1px solid var(--line); }
-  #tabbar button { background:transparent; border:1px solid transparent; border-bottom:none; color:var(--mut);
-    border-radius:9px 9px 0 0; padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer; }
+  #tabbar { display:flex; gap:6px; flex-wrap:wrap; }
+  #tabbar button { background:transparent; border:1px solid var(--line); color:var(--mut);
+    border-radius:8px; padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; }
   #tabbar button:hover { color:var(--fg); }
-  #tabbar button.active { background:var(--card); border-color:var(--line); color:var(--fg); }
+  #tabbar button.active { background:var(--fg); border-color:var(--fg); color:var(--bg); }
   .tabpane { display:none; }
   .tabpane.active { display:block; }
   .card h2 { margin:0 0 12px; font-size:14px; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); }
@@ -68,8 +69,7 @@
   .src.group { color:var(--warn); } .src.device { color:#5fd08a; }
 
   /* ---- aba Dispositivos em tela cheia ---- */
-  body[data-tab="pane-dispositivos"] main,
-  body[data-tab="pane-dispositivos"] #tabbar { max-width:none; }
+  body[data-tab="pane-dispositivos"] main { max-width:none; }
   #pane-dispositivos .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
   #devTbl { table-layout:auto; }
   #devTbl th, #devTbl td { vertical-align:middle; }
@@ -116,14 +116,13 @@
   .histlist .who { color:var(--mut); }
 
   /* ---- Biblioteca em tela cheia: menu de pastas + grade de arquivos ---- */
-  body[data-tab="pane-biblioteca"] main,
-  body[data-tab="pane-biblioteca"] #tabbar { max-width:none; }
+  body[data-tab="pane-biblioteca"] main { max-width:none; }
   #libWrap { display:grid; grid-template-columns:230px minmax(0,1fr) minmax(300px,380px); gap:16px; align-items:start; }
   @media (max-width:1024px) {
     #libWrap { grid-template-columns:210px 1fr; }
     #libPreview { grid-column:1 / -1; }
   }
-  #libTree { border:1px solid var(--line); border-radius:9px; background:#0d141c; padding:10px; position:sticky; top:12px; }
+  #libTree { border:1px solid var(--line); border-radius:9px; background:#0d141c; padding:10px; position:sticky; top:90px; }
   #libTree .thead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
   #libTree .thead b { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
   #libTree .thead button { padding:3px 9px; font-size:12px; }
@@ -149,7 +148,7 @@
   .atile .abadge { font-size:10px; color:var(--mut); padding:0 8px 7px; display:flex; justify-content:space-between; gap:6px; }
   .atile.sel { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc); }
   #libPreview { border:1px solid var(--line); border-radius:9px; background:#0d141c; padding:14px;
-    position:sticky; top:12px; max-height:calc(100vh - 90px); overflow:auto; }
+    position:sticky; top:90px; max-height:calc(100vh - 110px); overflow:auto; }
   #libPreview .pvmedia { width:100%; max-height:300px; object-fit:contain; background:#000; border-radius:8px; border:1px solid var(--line); }
   #libPreview dl { display:grid; grid-template-columns:96px 1fr; gap:4px 10px; font-size:12px; margin:12px 0; }
   #libPreview dt { color:var(--mut); } #libPreview dd { margin:0; word-break:break-all; }
@@ -173,8 +172,14 @@
 </head>
 <body>
 <header>
-  <b>A3K CMS</b><span class="muted">painel admin</span>
+  <div id="brandLogo"><b>A3K CMS</b> <span class="muted">painel admin</span></div>
   <select id="companyCtx" class="hidden" title="empresa em contexto (superadmin)"></select>
+  <nav id="tabbar" class="hidden">
+    <button data-target="pane-biblioteca">Biblioteca</button>
+    <button data-target="pane-playlist">Playlists</button>
+    <button data-target="pane-dispositivos">Dispositivos</button>
+    <button data-target="adminCard" id="tabAdminBtn" class="hidden">Administração</button>
+  </nav>
   <span style="flex:1"></span>
   <span id="who" class="muted"></span>
   <button class="ghost" id="logoutBtn">sair</button>
@@ -187,13 +192,6 @@
   <div style="margin-top:12px"><button id="loginBtn">Entrar</button></div>
   <p class="muted" id="loginErr"></p>
 </div>
-
-<nav id="tabbar" class="hidden">
-  <button data-target="pane-biblioteca">Biblioteca</button>
-  <button data-target="pane-playlist">Playlists</button>
-  <button data-target="pane-dispositivos">Dispositivos</button>
-  <button data-target="adminCard" id="tabAdminBtn" class="hidden">Administração</button>
-</nav>
 
 <main id="appView" class="hidden">
   <div class="card tabpane" id="pane-biblioteca">
@@ -754,7 +752,7 @@
         '<div class="row" style="margin-top:12px">' +
         '<button id="infoSave">Salvar</button>' +
         '<button class="ghost" id="infoReprobe">Reprocessar / converter</button>' +
-        '<button class="danger" id="infoDelete">remover asset</button></div>' +
+        '<button class="danger" id="infoDelete">remover</button></div>' +
         '</div></details>';
 
       // ---- bloco 2: condicionais ----
