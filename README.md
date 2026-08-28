@@ -31,9 +31,23 @@ Sem metadados (ffprobe/sharp fica no M2), sem drag-drop (M3), sem grupos (M4).
 - Heartbeat atualiza `last_seen` + `capabilities` + `last_version`.
 - Player web em `/player/` (kiosk, vanilla JS) e mini painel em `/admin/`.
 
+### M2 — Biblioteca a fundo (concluido)
+
+- **Pastas**: CRUD, renomear, mover (com prevencao de ciclo), apagar com guard
+  (`409` se nao vazia; `?force=true` cascateia subpastas e desarquiva assets).
+- **Metadados no upload**: `sharp` p/ imagem (width/height/format), `ffprobe`
+  (binario embutido via `@ffprobe-installer/ffprobe`) p/ video/audio
+  (duration/fps/bitrate/codec/format). Falha de probe nao quebra o upload —
+  `probe_status` fica `error` e da p/ reprocessar.
+- Asset: filtro por pasta, mover/renomear (`PATCH`), apagar (`DELETE`, remove o
+  arquivo do disco se nenhum outro asset usar o mesmo hash; `409` se estiver em
+  playlist, `?force=true` apaga e **bumpa a version** das playlists afetadas),
+  `POST .../reprobe`.
+- Painel de info do arquivo no `/admin/` (formato, resolucao, fps, bitrate,
+  codec, tamanho, hash, status do probe) + preview.
+
 ### Proximos
 
-M2 biblioteca a fundo (pastas, ffprobe/sharp, painel de info do arquivo),
 M3 playlist UX (drag-drop, reordenar, preview), M4 dispositivos a fundo
 (grupos, assign-to-grupo, fluxo "Add player" por adapter), M5 multiempresa +
 permissoes (enforcement), M6 day-parting, Fase 3 apps nativos.
@@ -59,8 +73,15 @@ npm start                 # sobe em http://localhost:3000
 | POST | `/api/auth/login` | `{email,password}` -> `{token,user}` |
 | GET  | `/api/auth/me` | usuario + permissoes |
 | GET  | `/api/adapters` | stubs de provisionamento/capacidades por player_type |
-| POST | `/api/assets` | multipart, campo `file` (+ `folder_id` opc.) -> asset |
-| GET  | `/api/assets` · `/api/assets/:id` | lista / detalhe |
+| POST | `/api/assets` | multipart `file` (+ `folder_id` opc.) -> asset com metadados extraidos |
+| GET  | `/api/assets[?folder_id=N\|unfiled]` · `/api/assets/:id` | lista / painel de info |
+| PATCH | `/api/assets/:id` | `{folder_id?,filename?}` mover / renomear |
+| POST | `/api/assets/:id/reprobe` | re-extrai metadados |
+| DELETE | `/api/assets/:id[?force=true]` | apaga (409 se em playlist; force bumpa version) |
+| GET  | `/api/folders` | lista plana (parent_id, contagens) |
+| POST | `/api/folders` | `{name,parent_id?}` |
+| PATCH | `/api/folders/:id` | `{name?,parent_id?}` renomear / mover |
+| DELETE | `/api/folders/:id[?force=true]` | apaga (409 se nao vazia) |
 | POST | `/api/playlists` | `{name}` -> playlist |
 | GET  | `/api/playlists` · `/api/playlists/:id` | lista / detalhe com itens |
 | POST | `/api/playlists/:id/items` | `{asset_id,duration?,ordem?}` (bumpa version) |
@@ -105,7 +126,7 @@ src/
   db/
     index.js           conexao node:sqlite (WAL, FKs on)
     migrate.js         runner de migrations
-    migrations/        001_init.sql (fundacao) · 002_m1_pairing.sql
+    migrations/        001_init.sql · 002_m1_pairing.sql · 003_m2_library.sql
   auth/                password (scrypt) · jwt · middleware · routes
   adapters/            base + tizen/webos/android/windows (stubs) + registry
   lib/
@@ -113,8 +134,11 @@ src/
     company.js         empresa padrao (M1 single-company)
     media.js           storage do multer, hash sha256, dedup
     manifest.js        resolve assignment + monta o manifest
+    probe.js           sharp (imagem) + ffprobe (video/audio), normalizacao
+    library.js         aplica probe no asset, apaga arquivo orfao
   routes/
-    assets.js          upload / listagem
+    assets.js          upload+probe / filtro por pasta / mover / reprobe / delete
+    folders.js         CRUD de pastas + move com anti-ciclo + delete guard
     playlists.js       CRUD + itens + bump de version
     devices.js         listagem / patch / assign (admin)
     player.js          pair/new, manifest, heartbeat (device token)
@@ -124,14 +148,19 @@ public/
 scripts/
   seed.js · reset.js
 test/
-  m0.test.js · m1.test.js   testes de aceite
+  m0.test.js · m1.test.js · m2.test.js   testes de aceite
 ```
+
+`sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
+por plataforma. Sem toolchain nativo. `FFPROBE_PATH` no `.env` sobrescreve.
 
 ## Modelo de dados
 
 `companies`, `roles`, `users` — configuracao e permissoes.
 `folders`, `assets` — biblioteca (colunas de metadados nullable ate o M2).
 `playlists` (com `version`), `playlist_items` (com `schedule` reservado p/ M6).
+`assets` ganhou `format`, `metadata` (dump cru do probe), `probe_status`
+(`pending`/`ok`/`error`/`skipped`) e `probe_error` no M2.
 `device_groups`, `devices` (`serial` unico, `player_type`, `capabilities` JSON,
 `hardware_id`/`token`/`last_version` do pareamento).
 `assignments` — aponta uma playlist para um `device` ou `group`; alvo unico por

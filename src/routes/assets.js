@@ -4,11 +4,18 @@ const express = require('express');
 const { getDb } = require('../db');
 const { requireAuth } = require('../auth/middleware');
 const { upload, assetTypeFromMime, finalizeUpload } = require('../lib/media');
+const { applyProbeToAsset, deleteAssetFileIfOrphan } = require('../lib/library');
 
 const router = express.Router();
 
-// POST /api/assets  (multipart: campo "file", opcional "folder_id")
-// M1: upload simples, sem ffprobe/sharp (metadados ficam null ate o M2).
+function scoped(db, id, companyId) {
+  return db
+    .prepare('SELECT * FROM assets WHERE id = ? AND company_id = ?')
+    .get(Number(id), companyId);
+}
+
+// POST /api/assets  (multipart: "file", opcional "folder_id")
+// M2: extrai metadados no upload (sharp p/ imagem, ffprobe p/ video/audio).
 router.post('/', requireAuth, upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'campo "file" ausente' });
@@ -27,7 +34,6 @@ router.post('/', requireAuth, upload.single('file'), async (req, res, next) => {
       if (!f) return res.status(400).json({ error: 'folder_id invalido' });
     }
 
-    // Dedup por hash dentro da empresa.
     const existing = db
       .prepare('SELECT * FROM assets WHERE company_id = ? AND hash = ?')
       .get(req.auth.companyId, hash);
@@ -37,8 +43,8 @@ router.post('/', requireAuth, upload.single('file'), async (req, res, next) => {
 
     const info = db
       .prepare(
-        `INSERT INTO assets (company_id, folder_id, type, filename, url, hash, size_bytes, mime)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO assets (company_id, folder_id, type, filename, url, hash, size_bytes, mime, probe_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
       )
       .run(
         req.auth.companyId,
@@ -51,30 +57,121 @@ router.post('/', requireAuth, upload.single('file'), async (req, res, next) => {
         req.file.mimetype || null
       );
 
-    const asset = db
-      .prepare('SELECT * FROM assets WHERE id = ?')
-      .get(Number(info.lastInsertRowid));
+    let asset = scoped(db, Number(info.lastInsertRowid), req.auth.companyId);
+    asset = await applyProbeToAsset(db, asset);
     res.status(201).json({ asset });
   } catch (err) {
     next(err);
   }
 });
 
-// GET /api/assets
+// GET /api/assets[?folder_id=N|unfiled]
 router.get('/', requireAuth, (req, res) => {
-  const rows = getDb()
-    .prepare('SELECT * FROM assets WHERE company_id = ? ORDER BY id DESC')
-    .all(req.auth.companyId);
+  const db = getDb();
+  const { folder_id: folderId } = req.query;
+  let rows;
+  if (folderId === undefined) {
+    rows = db
+      .prepare('SELECT * FROM assets WHERE company_id = ? ORDER BY id DESC')
+      .all(req.auth.companyId);
+  } else if (folderId === 'unfiled' || folderId === 'null' || folderId === '') {
+    rows = db
+      .prepare('SELECT * FROM assets WHERE company_id = ? AND folder_id IS NULL ORDER BY id DESC')
+      .all(req.auth.companyId);
+  } else {
+    rows = db
+      .prepare('SELECT * FROM assets WHERE company_id = ? AND folder_id = ? ORDER BY id DESC')
+      .all(req.auth.companyId, Number(folderId));
+  }
   res.json({ assets: rows });
 });
 
-// GET /api/assets/:id
+// GET /api/assets/:id  (painel de info)
 router.get('/:id', requireAuth, (req, res) => {
-  const row = getDb()
-    .prepare('SELECT * FROM assets WHERE id = ? AND company_id = ?')
-    .get(Number(req.params.id), req.auth.companyId);
-  if (!row) return res.status(404).json({ error: 'asset nao encontrado' });
-  res.json({ asset: row });
+  const asset = scoped(getDb(), req.params.id, req.auth.companyId);
+  if (!asset) return res.status(404).json({ error: 'asset nao encontrado' });
+  res.json({ asset });
+});
+
+// PATCH /api/assets/:id  { folder_id?, filename? }   (mover / renomear)
+router.patch('/:id', requireAuth, (req, res) => {
+  const db = getDb();
+  const asset = scoped(db, req.params.id, req.auth.companyId);
+  if (!asset) return res.status(404).json({ error: 'asset nao encontrado' });
+
+  const b = req.body || {};
+  const sets = [];
+  const vals = [];
+
+  if (b.folder_id !== undefined) {
+    const fid = b.folder_id === null || b.folder_id === '' ? null : Number(b.folder_id);
+    if (fid !== null) {
+      const f = db
+        .prepare('SELECT id FROM folders WHERE id = ? AND company_id = ?')
+        .get(fid, req.auth.companyId);
+      if (!f) return res.status(400).json({ error: 'folder_id invalido' });
+    }
+    sets.push('folder_id = ?'); vals.push(fid);
+  }
+  if (b.filename !== undefined) {
+    const fn = String(b.filename).trim();
+    if (!fn) return res.status(400).json({ error: 'filename vazio' });
+    sets.push('filename = ?'); vals.push(fn);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'nada para atualizar' });
+
+  sets.push(`updated_at = datetime('now')`);
+  vals.push(asset.id);
+  db.prepare(`UPDATE assets SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+  res.json({ asset: scoped(db, asset.id, req.auth.companyId) });
+});
+
+// POST /api/assets/:id/reprobe   (re-extrai metadados)
+router.post('/:id/reprobe', requireAuth, async (req, res, next) => {
+  try {
+    const db = getDb();
+    const asset = scoped(db, req.params.id, req.auth.companyId);
+    if (!asset) return res.status(404).json({ error: 'asset nao encontrado' });
+    const updated = await applyProbeToAsset(db, asset);
+    res.json({ asset: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/assets/:id
+router.delete('/:id', requireAuth, (req, res) => {
+  const db = getDb();
+  const asset = scoped(db, req.params.id, req.auth.companyId);
+  if (!asset) return res.status(404).json({ error: 'asset nao encontrado' });
+
+  const affectedPlaylists = db
+    .prepare('SELECT DISTINCT playlist_id FROM playlist_items WHERE asset_id = ?')
+    .all(asset.id)
+    .map((r) => r.playlist_id);
+  if (affectedPlaylists.length > 0 && req.query.force !== 'true') {
+    return res.status(409).json({
+      error: 'asset em uso em playlist(s)',
+      playlists: affectedPlaylists,
+      hint: 'repita com ?force=true',
+    });
+  }
+
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM assets WHERE id = ?').run(asset.id); // playlist_items caem por FK CASCADE
+    for (const pid of affectedPlaylists) {
+      db.prepare(
+        `UPDATE playlists SET version = version + 1, updated_at = datetime('now') WHERE id = ?`
+      ).run(pid);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  deleteAssetFileIfOrphan(db, asset);
+  res.json({ ok: true, bumped_playlists: affectedPlaylists });
 });
 
 module.exports = router;

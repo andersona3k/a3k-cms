@@ -191,7 +191,8 @@ test('endpoints admin exigem JWT', async () => {
   assert.equal((await req('GET', '/api/devices')).status, 401);
 });
 
-test('health reporta M1', async () => {
+test('health responde ok', async () => {
   const r = await req('GET', '/api/health');
-  assert.equal(r.body.milestone, 'M1');
+  assert.equal(r.body.ok, true);
+  assert.equal(r.body.service, 'a3k-cms');
 });

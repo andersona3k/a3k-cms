@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>A3K CMS — Admin (M1)</title>
+<title>A3K CMS — Admin</title>
 <style>
-  :root { --bg:#0f151c; --card:#161f2a; --line:#25333f; --fg:#e6edf3; --mut:#8fa3b5; --acc:#3b82f6; }
+  :root { --bg:#0f151c; --card:#161f2a; --line:#25333f; --fg:#e6edf3; --mut:#8fa3b5; --acc:#3b82f6; --warn:#e0a12f; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui,sans-serif; }
   header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; gap:16px; align-items:center; }
   header b { font-size:16px; }
-  main { max-width:1000px; margin:0 auto; padding:20px; display:grid; gap:16px; }
+  main { max-width:1040px; margin:0 auto; padding:20px; display:grid; gap:16px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
   .card h2 { margin:0 0 12px; font-size:14px; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); }
   label { display:block; font-size:12px; color:var(--mut); margin:8px 0 3px; }
@@ -18,22 +18,30 @@
     background:#0d141c; color:var(--fg); }
   button { background:var(--acc); border-color:var(--acc); color:#fff; cursor:pointer; }
   button.ghost { background:transparent; color:var(--fg); }
+  button.danger { background:transparent; color:#e06a6a; border-color:#5a2b2b; }
   button:disabled { opacity:.5; cursor:default; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:end; }
   table { width:100%; border-collapse:collapse; margin-top:8px; }
   th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); font-size:13px; }
   th { color:var(--mut); font-weight:600; }
+  tbody tr.clickable:hover { background:#1b2733; cursor:pointer; }
   .pill { font-size:11px; padding:2px 7px; border-radius:999px; background:#0d141c; border:1px solid var(--line); }
+  .pill.ok { color:#5fd08a; } .pill.error { color:#e06a6a; } .pill.pending { color:var(--warn); }
   .muted { color:var(--mut); }
   #log { white-space:pre-wrap; font:12px/1.4 ui-monospace,monospace; color:var(--mut);
     max-height:140px; overflow:auto; background:#0d141c; border:1px solid var(--line); border-radius:7px; padding:8px; }
   #loginView { max-width:360px; margin:60px auto; }
   .hidden { display:none; }
+  #infoPanel { position:fixed; top:0; right:0; height:100%; width:360px; background:var(--card);
+    border-left:1px solid var(--line); padding:20px; overflow:auto; box-shadow:-8px 0 24px #0006; z-index:20; }
+  #infoPanel dl { display:grid; grid-template-columns:110px 1fr; gap:4px 10px; font-size:13px; margin:12px 0; }
+  #infoPanel dt { color:var(--mut); } #infoPanel dd { margin:0; word-break:break-all; }
+  #infoPanel img, #infoPanel video { max-width:100%; border-radius:8px; border:1px solid var(--line); background:#000; }
 </style>
 </head>
 <body>
 <header>
-  <b>A3K CMS</b><span class="muted">M1 — fatia vertical</span>
+  <b>A3K CMS</b><span class="muted">painel admin</span>
   <span style="flex:1"></span>
   <span id="who" class="muted"></span>
   <button class="ghost" id="logoutBtn">sair</button>
@@ -49,12 +57,22 @@
 
 <main id="appView" class="hidden">
   <div class="card">
-    <h2>1 · Biblioteca — upload</h2>
+    <h2>1 · Biblioteca</h2>
     <div class="row">
-      <div><label>Arquivo (imagem ou video)</label><input type="file" id="file" /></div>
-      <button id="uploadBtn">Enviar</button>
+      <div><label>Pasta atual</label>
+        <select id="folderSelect"></select></div>
+      <div><label>Nova pasta (dentro da atual)</label><input id="folderName" placeholder="Campanhas" /></div>
+      <button id="folderCreateBtn">Criar pasta</button>
+      <button class="danger" id="folderDeleteBtn">Apagar pasta atual</button>
     </div>
-    <table id="assetsTbl"><thead><tr><th>ID</th><th>Arquivo</th><th>Tipo</th><th>Tamanho</th></tr></thead><tbody></tbody></table>
+    <div class="row" style="margin-top:10px">
+      <div><label>Arquivo (imagem / video / audio)</label><input type="file" id="file" /></div>
+      <button id="uploadBtn">Enviar para a pasta atual</button>
+    </div>
+    <table id="assetsTbl"><thead><tr>
+      <th>ID</th><th>Arquivo</th><th>Tipo</th><th>Formato</th><th>Resolucao</th><th>Duracao</th><th>Tamanho</th><th>Metadados</th>
+    </tr></thead><tbody></tbody></table>
+    <p class="muted">Clique numa linha para o painel de info.</p>
   </div>
 
   <div class="card">
@@ -62,8 +80,7 @@
     <div class="row">
       <div><label>Nova playlist</label><input id="plName" placeholder="Vitrine" /></div>
       <button id="plCreateBtn">Criar</button>
-      <div><label>Playlist ativa</label>
-        <select id="plSelect"></select></div>
+      <div><label>Playlist ativa</label><select id="plSelect"></select></div>
       <div><label>Asset</label><select id="plAsset"></select></div>
       <div><label>Duracao (s)</label><input id="plDur" type="number" value="10" style="width:80px" /></div>
       <button id="plAddBtn">Adicionar item</button>
@@ -82,12 +99,14 @@
   <div class="card"><h2>Log</h2><div id="log"></div></div>
 </main>
 
+<div id="infoPanel" class="hidden"></div>
+
 <script>
 (function () {
   'use strict';
   var API = location.origin;
   var token = localStorage.getItem('a3k_admin_token') || '';
-  var state = { assets: [], playlists: [], activePlaylist: null };
+  var state = { assets: [], playlists: [], folders: [], activePlaylist: null, currentFolder: '' };
 
   var $ = function (id) { return document.getElementById(id); };
   function log(m) { $('log').textContent = '[' + new Date().toLocaleTimeString() + '] ' + m + '\n' + $('log').textContent; }
@@ -98,10 +117,13 @@
     return fetch(API + path, opts).then(function (r) {
       return r.text().then(function (t) {
         var body = t ? JSON.parse(t) : {};
-        if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+        if (!r.ok) { var e = new Error(body.error || ('HTTP ' + r.status)); e.body = body; throw e; }
         return body;
       });
     });
+  }
+  function jpost(path, obj, method) {
+    return api(path, { method: method || 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(obj) });
   }
 
   // ---- auth ----
@@ -111,47 +133,164 @@
     if (show) { $('playerUrl').textContent = API + '/player/'; refreshAll(); }
   }
   $('loginBtn').onclick = function () {
-    api('/api/auth/login', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: $('email').value, password: $('password').value }),
-    }).then(function (d) {
-      token = d.token; localStorage.setItem('a3k_admin_token', token);
-      $('who').textContent = d.user.email; showApp(true);
-    }).catch(function (e) { $('loginErr').textContent = e.message; });
+    jpost('/api/auth/login', { email: $('email').value, password: $('password').value })
+      .then(function (d) { token = d.token; localStorage.setItem('a3k_admin_token', token);
+        $('who').textContent = d.user.email; showApp(true); })
+      .catch(function (e) { $('loginErr').textContent = e.message; });
   };
   $('logoutBtn').onclick = function () { token = ''; localStorage.removeItem('a3k_admin_token'); showApp(false); };
+
+  // ---- pastas ----
+  function folderLabel(f) {
+    var depth = 0, cur = f, byId = {};
+    state.folders.forEach(function (x) { byId[x.id] = x; });
+    while (cur && cur.parent_id) { depth++; cur = byId[cur.parent_id]; }
+    return '  '.repeat(depth) + f.name + ' (' + f.asset_count + ')';
+  }
+  function loadFolders() {
+    return api('/api/folders').then(function (d) {
+      state.folders = d.folders;
+      var sel = $('folderSelect'); var prev = state.currentFolder;
+      sel.innerHTML = '<option value="">— (raiz / sem pasta)</option>';
+      d.folders.forEach(function (f) {
+        var o = document.createElement('option'); o.value = f.id; o.textContent = folderLabel(f);
+        sel.appendChild(o);
+      });
+      sel.value = d.folders.some(function (f) { return String(f.id) === String(prev); }) ? prev : '';
+      state.currentFolder = sel.value;
+    });
+  }
+  $('folderSelect').onchange = function () { state.currentFolder = this.value; loadAssets(); };
+  $('folderCreateBtn').onclick = function () {
+    var name = $('folderName').value.trim(); if (!name) return;
+    var body = { name: name };
+    if (state.currentFolder) body.parent_id = Number(state.currentFolder);
+    jpost('/api/folders', body).then(function (d) {
+      log('pasta #' + d.folder.id + ' "' + d.folder.name + '" criada'); $('folderName').value = '';
+      state.currentFolder = String(d.folder.id); return loadFolders().then(loadAssets);
+    }).catch(function (e) { log('pasta: ' + e.message); });
+  };
+  $('folderDeleteBtn').onclick = function () {
+    if (!state.currentFolder) return log('selecione uma pasta (nao a raiz)');
+    var id = state.currentFolder;
+    api('/api/folders/' + id, { method: 'DELETE' }).then(after).catch(function (e) {
+      if (e.body && e.body.error === 'pasta nao vazia') {
+        if (confirm('Pasta tem ' + e.body.subfolder_count + ' subpasta(s) e ' + e.body.asset_count +
+          ' asset(s). Apagar subpastas e desarquivar os assets?')) {
+          api('/api/folders/' + id + '?force=true', { method: 'DELETE' }).then(after).catch(function (e2) { log(e2.message); });
+        }
+      } else log('apagar pasta: ' + e.message);
+    });
+    function after(d) { log('pasta apagada (' + d.deleted_subfolders + ' sub, ' + d.unfiled_assets + ' desarquivados)');
+      state.currentFolder = ''; loadFolders().then(loadAssets); }
+  };
 
   // ---- assets ----
   $('uploadBtn').onclick = function () {
     var f = $('file').files[0];
     if (!f) return log('escolha um arquivo');
     var fd = new FormData(); fd.append('file', f);
+    if (state.currentFolder) fd.append('folder_id', state.currentFolder);
     $('uploadBtn').disabled = true;
     api('/api/assets', { method: 'POST', body: fd })
-      .then(function (d) { log('asset #' + d.asset.id + ' ' + (d.deduped ? '(dedup)' : 'enviado')); loadAssets(); })
+      .then(function (d) {
+        log('asset #' + d.asset.id + (d.deduped ? ' (dedup)' : ' enviado, probe=' + d.asset.probe_status));
+        $('file').value = ''; return loadFolders().then(loadAssets);
+      })
       .catch(function (e) { log('upload: ' + e.message); })
       .finally(function () { $('uploadBtn').disabled = false; });
   };
+
+  function resOf(a) { return (a.width && a.height) ? a.width + '×' + a.height : '—'; }
+  function durOf(a) { return a.duration != null ? Number(a.duration).toFixed(2) + 's' : '—'; }
+
   function loadAssets() {
-    return api('/api/assets').then(function (d) {
+    var q = state.currentFolder ? ('?folder_id=' + state.currentFolder) : '?folder_id=unfiled';
+    return api('/api/assets' + q).then(function (d) {
       state.assets = d.assets;
       var tb = $('assetsTbl').querySelector('tbody'); tb.innerHTML = '';
-      var sel = $('plAsset'); sel.innerHTML = '';
       d.assets.forEach(function (a) {
-        tb.insertAdjacentHTML('beforeend',
-          '<tr><td>' + a.id + '</td><td>' + esc(a.filename) + '</td><td>' + a.type +
-          '</td><td>' + fmtBytes(a.size_bytes) + '</td></tr>');
-        var o = document.createElement('option'); o.value = a.id; o.textContent = '#' + a.id + ' ' + a.filename;
-        sel.appendChild(o);
+        var tr = document.createElement('tr'); tr.className = 'clickable';
+        tr.innerHTML =
+          '<td>' + a.id + '</td><td>' + esc(a.filename) + '</td><td>' + a.type +
+          '</td><td>' + (a.format || '—') + '</td><td>' + resOf(a) + '</td><td>' + durOf(a) +
+          '</td><td>' + fmtBytes(a.size_bytes) + '</td><td><span class="pill ' + a.probe_status + '">' + a.probe_status + '</span></td>';
+        tr.onclick = function () { openInfo(a.id); };
+        tb.appendChild(tr);
+      });
+      // seletor de asset da playlist = todos os assets da empresa
+      return api('/api/assets').then(function (all) {
+        var sel = $('plAsset'); sel.innerHTML = '';
+        all.assets.forEach(function (a) {
+          var o = document.createElement('option'); o.value = a.id; o.textContent = '#' + a.id + ' ' + a.filename;
+          sel.appendChild(o);
+        });
       });
     });
   }
 
+  // ---- painel de info ----
+  function openInfo(id) {
+    api('/api/assets/' + id).then(function (d) {
+      var a = d.asset;
+      var p = $('infoPanel'); p.classList.remove('hidden');
+      var preview = '';
+      if (a.type === 'image') preview = '<img src="' + API + a.url + '" />';
+      else if (a.type === 'video') preview = '<video src="' + API + a.url + '" controls muted></video>';
+      var folderName = '—';
+      state.folders.forEach(function (f) { if (f.id === a.folder_id) folderName = f.name; });
+      var folderOpts = '<option value="">— sem pasta</option>' + state.folders.map(function (f) {
+        return '<option value="' + f.id + '"' + (f.id === a.folder_id ? ' selected' : '') + '>' + esc(f.name) + '</option>';
+      }).join('');
+      p.innerHTML =
+        '<div class="row" style="justify-content:space-between"><b>Asset #' + a.id + '</b>' +
+        '<button class="ghost" id="infoClose">fechar</button></div>' + preview +
+        '<dl>' +
+        row('Arquivo', esc(a.filename)) + row('Tipo', a.type) + row('MIME', a.mime || '—') +
+        row('Formato', a.format || '—') + row('Resolucao', resOf(a)) + row('Duracao', durOf(a)) +
+        row('FPS', a.fps != null ? a.fps : '—') + row('Bitrate', a.bitrate != null ? fmtBits(a.bitrate) : '—') +
+        row('Codec', a.codec || '—') + row('Tamanho', fmtBytes(a.size_bytes)) +
+        row('Hash', '<span class="muted">' + (a.hash || '').slice(0, 16) + '…</span>') +
+        row('Probe', '<span class="pill ' + a.probe_status + '">' + a.probe_status + '</span>' +
+          (a.probe_error ? ' <span class="muted">' + esc(a.probe_error) + '</span>' : '')) +
+        '</dl>' +
+        '<label>Pasta</label><select id="infoFolder">' + folderOpts + '</select>' +
+        '<label>Renomear</label><input id="infoName" value="' + esc(a.filename) + '" />' +
+        '<div class="row" style="margin-top:12px">' +
+        '<button id="infoSave">Salvar</button>' +
+        '<button class="ghost" id="infoReprobe">Reprocessar metadados</button>' +
+        '<button class="danger" id="infoDelete">Apagar asset</button></div>';
+      $('infoClose').onclick = function () { p.classList.add('hidden'); };
+      $('infoSave').onclick = function () {
+        jpost('/api/assets/' + a.id, {
+          folder_id: $('infoFolder').value ? Number($('infoFolder').value) : null,
+          filename: $('infoName').value,
+        }, 'PATCH').then(function () { log('asset #' + a.id + ' atualizado'); p.classList.add('hidden');
+          loadFolders().then(loadAssets); }).catch(function (e) { log(e.message); });
+      };
+      $('infoReprobe').onclick = function () {
+        api('/api/assets/' + a.id + '/reprobe', { method: 'POST' })
+          .then(function () { log('asset #' + a.id + ' reprocessado'); openInfo(a.id); loadAssets(); })
+          .catch(function (e) { log(e.message); });
+      };
+      $('infoDelete').onclick = function () {
+        api('/api/assets/' + a.id, { method: 'DELETE' }).then(done).catch(function (e) {
+          if (e.body && e.body.playlists) {
+            if (confirm('Asset em uso nas playlists ' + e.body.playlists.join(', ') + '. Apagar mesmo assim?'))
+              api('/api/assets/' + a.id + '?force=true', { method: 'DELETE' }).then(done).catch(function (e2) { log(e2.message); });
+          } else log('apagar: ' + e.message);
+        });
+        function done() { log('asset #' + a.id + ' apagado'); p.classList.add('hidden');
+          loadFolders().then(loadAssets).then(loadPlaylists); }
+      };
+    }).catch(function (e) { log(e.message); });
+  }
+  function row(k, v) { return '<dt>' + k + '</dt><dd>' + v + '</dd>'; }
+
   // ---- playlists ----
   $('plCreateBtn').onclick = function () {
     var name = $('plName').value.trim(); if (!name) return;
-    api('/api/playlists', { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: name }) })
+    jpost('/api/playlists', { name: name })
       .then(function (d) { log('playlist #' + d.playlist.id + ' criada'); $('plName').value = '';
         state.activePlaylist = d.playlist.id; return loadPlaylists(); })
       .catch(function (e) { log('playlist: ' + e.message); });
@@ -159,10 +298,9 @@
   $('plSelect').onchange = function () { state.activePlaylist = Number(this.value); loadPlaylistItems(); };
   $('plAddBtn').onclick = function () {
     if (!state.activePlaylist) return log('crie/selecione uma playlist');
-    api('/api/playlists/' + state.activePlaylist + '/items', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ asset_id: Number($('plAsset').value), duration: Number($('plDur').value) }),
-    }).then(function (d) { log('item add, playlist v' + d.version); loadPlaylistItems(); })
+    jpost('/api/playlists/' + state.activePlaylist + '/items',
+      { asset_id: Number($('plAsset').value), duration: Number($('plDur').value) })
+      .then(function (d) { log('item add, playlist v' + d.version); loadPlaylistItems(); loadPlaylists(); })
       .catch(function (e) { log('item: ' + e.message); });
   };
   function loadPlaylists() {
@@ -204,8 +342,7 @@
     document.querySelectorAll('select[data-devsel]').forEach(function (sel) {
       var cur = sel.value; sel.innerHTML = '<option value="">—</option>';
       state.playlists.forEach(function (p) {
-        var o = document.createElement('option'); o.value = p.id; o.textContent = p.name;
-        sel.appendChild(o);
+        var o = document.createElement('option'); o.value = p.id; o.textContent = p.name; sel.appendChild(o);
       });
       sel.value = cur;
     });
@@ -230,10 +367,8 @@
               .then(function () { log('device ' + dev.serial + ' desatribuido'); loadDevices(); });
             return;
           }
-          api('/api/devices/' + dev.id + '/assign', {
-            method: 'POST', headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ playlist_id: Number(sel.value) }),
-          }).then(function () { log('device ' + dev.serial + ' -> playlist ' + sel.value); loadDevices(); })
+          jpost('/api/devices/' + dev.id + '/assign', { playlist_id: Number(sel.value) })
+            .then(function () { log('device ' + dev.serial + ' -> playlist ' + sel.value); loadDevices(); })
             .catch(function (e) { log('assign: ' + e.message); });
         };
         tb.appendChild(tr);
@@ -249,7 +384,7 @@
   $('devRefreshBtn').onclick = loadDevices;
 
   function refreshAll() {
-    loadAssets().then(loadPlaylists).then(loadDevices).catch(function (e) {
+    loadFolders().then(loadAssets).then(loadPlaylists).then(loadDevices).catch(function (e) {
       if (/HTTP 401|token/.test(e.message)) showApp(false); else log(e.message);
     });
     if (!window._devPoll) window._devPoll = setInterval(loadDevices, 10000);
@@ -259,6 +394,7 @@
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function fmtBytes(n) { if (!n) return '—'; var u = ['B','KB','MB','GB']; var i = 0;
     while (n >= 1024 && i < 3) { n /= 1024; i++; } return n.toFixed(1) + ' ' + u[i]; }
+  function fmtBits(n) { if (!n) return '—'; return (n / 1000).toFixed(0) + ' kbps'; }
 
   if (token) { $('who').textContent = '(sessao salva)'; showApp(true); } else { showApp(false); }
 })();

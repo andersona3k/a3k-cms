@@ -9,6 +9,7 @@ const { requireAuth } = require('./auth/middleware');
 const { listAdapters, PLAYER_TYPES } = require('./adapters');
 
 const assetsRoutes = require('./routes/assets');
+const foldersRoutes = require('./routes/folders');
 const playlistsRoutes = require('./routes/playlists');
 const devicesRoutes = require('./routes/devices');
 const playerRoutes = require('./routes/player');
@@ -20,7 +21,7 @@ function createApp() {
 
   // Health — sem auth.
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M1' });
+    res.json({ ok: true, service: pkg.name, version: pkg.version, milestone: 'M2' });
   });
 
   // Auth.
@@ -38,6 +39,7 @@ function createApp() {
 
   // Admin (JWT).
   app.use('/api/assets', assetsRoutes);
+  app.use('/api/folders', foldersRoutes);
   app.use('/api/playlists', playlistsRoutes);
   app.use('/api/devices', devicesRoutes);
 
@@ -57,7 +59,7 @@ function createApp() {
 
   app.get('/', (req, res) => {
     res.type('text/plain').send(
-      `${pkg.name} v${pkg.version} — M1 (fatia vertical)\n\n` +
+      `${pkg.name} v${pkg.version} — M2 (biblioteca)\n\n` +
         `player kiosk : /player/\n` +
         `admin        : /admin/\n` +
         `health       : /api/health\n`

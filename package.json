@@ -17,9 +17,11 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^2.2.0"
+    "multer": "^2.2.0",
+    "sharp": "^0.35.4"
   }
 }
