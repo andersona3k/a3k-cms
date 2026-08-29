@@ -242,7 +242,8 @@ Superadmin manda `X-Company-Id` p/ atuar em outra empresa.
 | PATCH | `/api/devices/:id` | `{name?,status?,player_type?,group_id?}` |
 | POST | `/api/devices/:id/assign` | `{playlist_id}` (upsert do assignment do device) |
 | DELETE | `/api/devices/:id/assign` | desatribui (volta a herdar do grupo) |
-| PATCH | `/api/devices/:id` | +`{screenshot_interval:1\|5\|10\|30\|60, comm_interval}` |
+| PATCH | `/api/devices/:id` | +`{orientation:0\|90\|180\|270, screenshot_interval:1\|5\|10\|30\|60, comm_interval}` |
+| POST | `/api/devices/:id/orientation` | _device_ — `{rotate90}` cicla ou `{orientation}` (usado pelo F2) |
 | POST · GET | `/api/devices/:id/commands` | enfileira / lista comandos (`ping` `restart` `clear_cache` `unassign_playlist` `screenshot`; `unassign` resolve na hora) |
 | GET | `/api/devices/:id/screenshots` | capturas (últimos 7 dias) |
 | GET | `/api/devices/:id/comm-log?days=30` | ciclos de 4 tentativas |
@@ -411,7 +412,7 @@ node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m18.test.js  testes de aceite (160 no total)
+  m0..m19.test.js  testes de aceite (164 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
