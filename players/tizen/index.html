@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>A3K Player</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden;color:#556;font:14px system-ui,sans-serif}</style>
+</head>
+<body>
+<div id="m" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center">carregando…</div>
+<script>
+/* Casca Tizen: toda a lógica do player fica hospedada no CMS. Basta atualizar
+   o servidor; o .wgt (esta casca) quase nunca muda. O endereço do CMS é fixado
+   aqui no empacotamento — trocou de servidor, regera o .wgt. */
+(function () {
+  'use strict';
+  var CMS = 'http://192.168.0.42';   // <<< CMS_URL — ajustado no build do .wgt
+  var LS = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+             set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+
+  // identidade física estável: DUID/MAC do aparelho via webapis (quando disponível),
+  // senão um UUID persistido.
+  function hardwareId() {
+    var hw = LS.get('a3k_hw');
+    try {
+      if (window.webapis && webapis.network && webapis.network.getMac) {
+        var mac = webapis.network.getMac();
+        if (mac) { hw = 'mac-' + String(mac).replace(/[^0-9a-fA-F]/g, '').toLowerCase(); }
+      } else if (window.tizen && tizen.systeminfo) {
+        // fallback: alguns modelos expoem via systeminfo
+      }
+    } catch (e) {}
+    if (!hw) {
+      hw = (self.crypto && crypto.randomUUID) ? crypto.randomUUID()
+        : 'hw-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    }
+    LS.set('a3k_hw', hw);
+    return hw;
+  }
+
+  location.replace(CMS + '/player/?hw=' + encodeURIComponent(hardwareId()));
+})();
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <widget>
   <ver>1.0.0</ver>
-  <size>20000</size>
-  <widgetname>A3K Player</widgetname>
+  <size>1692</size>
+  <widgetname>A3Kplayer</widgetname>
   <webtype>tizen</webtype>
 </widget>
