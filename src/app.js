@@ -15,6 +15,7 @@ const playlistFoldersRoutes = require('./routes/playlistFolders');
 const devicesRoutes = require('./routes/devices');
 const deviceGroupsRoutes = require('./routes/deviceGroups');
 const pairingRoutes = require('./routes/pairing');
+const activationRoutes = require('./routes/activation');
 const companiesRoutes = require('./routes/companies');
 const rolesRoutes = require('./routes/roles');
 const usersRoutes = require('./routes/users');
@@ -40,6 +41,10 @@ function createApp() {
 
   // Add player (JWT) — antes do playerRoutes p/ nao colidir com /api/pair/new.
   app.use('/api/pair/requests', pairingRoutes);
+
+  // Ativação iniciada pelo player (o link gera o código; o admin resgata).
+  // /new e /status sao publicos; /redeem exige JWT (guard dentro da rota).
+  app.use('/api/activation', activationRoutes);
 
   // Player (sem JWT: pair aberto, manifest/heartbeat via token do device).
   // Registrado ANTES do router admin de /api/devices para que
