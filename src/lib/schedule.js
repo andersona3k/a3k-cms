@@ -16,6 +16,16 @@
 
 const TIME_RE = /^(\d{1,2}):([0-5]\d)$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// from/until aceitam data (YYYY-MM-DD) ou data+hora (YYYY-MM-DDTHH:MM)
+const DT_RE = /^\d{4}-\d{2}-\d{2}(T([01]\d|2[0-3]):[0-5]\d)?$/;
+
+function pad2s(n) { return String(n).padStart(2, '0'); }
+// carimbo local com a mesma precisao do limite (10 = so data, 16 = data+hora)
+function localStamp(d, len) {
+  const ymd = d.getFullYear() + '-' + pad2s(d.getMonth() + 1) + '-' + pad2s(d.getDate());
+  if (len <= 10) return ymd;
+  return ymd + 'T' + pad2s(d.getHours()) + ':' + pad2s(d.getMinutes());
+}
 
 function toMinutes(hhmm) {
   const m = TIME_RE.exec(String(hhmm).trim());
@@ -80,8 +90,9 @@ function validateSchedule(input) {
 
   for (const k of ['from', 'until']) {
     if (s[k] != null && s[k] !== '') {
-      if (!DATE_RE.test(String(s[k]))) return { ok: false, error: `${k} invalido (YYYY-MM-DD)` };
-      out[k] = String(s[k]);
+      const v = String(s[k]).slice(0, 16);
+      if (!DT_RE.test(v)) return { ok: false, error: `${k} invalido (YYYY-MM-DD ou YYYY-MM-DDTHH:MM)` };
+      out[k] = v;
     }
   }
   if (out.from && out.until && out.from > out.until) {
@@ -101,9 +112,8 @@ function isActive(schedule, date) {
   }
 
   const d = date || new Date();
-  const ymd = localYmd(d);
-  if (s.from && ymd < s.from) return false;
-  if (s.until && ymd > s.until) return false;
+  if (s.from && localStamp(d, String(s.from).length) < s.from) return false;
+  if (s.until && localStamp(d, String(s.until).length) > s.until) return false;
 
   const startMin = s.start ? toMinutes(s.start) : 0;
   let endMin = s.end ? toMinutes(s.end) : 24 * 60;

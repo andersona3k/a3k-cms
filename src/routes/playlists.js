@@ -5,6 +5,7 @@ const { getDb } = require('../db');
 const { requireAuth, writeGuard } = require('../auth/middleware');
 const { buildPlaylistManifest } = require('../lib/manifest');
 const { validateSchedule, isActive } = require('../lib/schedule');
+const { validateGroupRule } = require('../lib/groupRule');
 
 const router = express.Router();
 router.use(requireAuth, writeGuard('playlists:write'));
@@ -27,8 +28,10 @@ function itemsOf(db, playlistId) {
   return db
     .prepare(
       `SELECT pi.id, pi.asset_id, pi.ordem, pi.duration, pi.schedule,
-              pi.rotation, pi.mirror, pi.suspended,
-              a.type, a.filename, a.url, a.hash, a.size_bytes, a.width, a.height, a.format, a.thumb_url
+              pi.rotation, pi.mirror, pi.suspended, pi.group_rule,
+              a.type, a.filename, a.url, a.hash, a.size_bytes, a.width, a.height, a.format, a.thumb_url,
+              a.mime, a.fps, a.bitrate, a.codec, a.probe_status, a.duration AS asset_duration,
+              a.schedule AS asset_schedule
          FROM playlist_items pi
          JOIN assets a ON a.id = pi.asset_id
         WHERE pi.playlist_id = ?
@@ -36,14 +39,19 @@ function itemsOf(db, playlistId) {
     )
     .all(playlistId)
     .map((r) => {
-      let schedule = null;
-      if (r.schedule) { try { schedule = JSON.parse(r.schedule); } catch { schedule = null; } }
+      const parse = (v) => { try { return v ? JSON.parse(v) : null; } catch { return null; } };
+      const schedule = parse(r.schedule);            // condicional personalizada (item)
+      const assetSchedule = parse(r.asset_schedule); // condicional da biblioteca (arquivo)
+      const groupRule = parse(r.group_rule);
       return {
         ...r,
         schedule,
+        asset_schedule: assetSchedule,
+        group_rule: groupRule,
         suspended: !!r.suspended,
         duration_locked: r.type === 'video',
-        active_now: !r.suspended && isActive(schedule, now),
+        // no ar agora = pela condicional efetiva (item OU, se null, a do arquivo)
+        active_now: !r.suspended && isActive(schedule || assetSchedule, now),
       };
     });
 }
@@ -295,8 +303,8 @@ router.post('/:id/duplicate', (req, res) => {
       );
     const newId = Number(info.lastInsertRowid);
     db.prepare(
-      `INSERT INTO playlist_items (playlist_id, asset_id, ordem, duration, schedule, rotation, mirror, suspended)
-       SELECT ?, asset_id, ordem, duration, schedule, rotation, mirror, suspended
+      `INSERT INTO playlist_items (playlist_id, asset_id, ordem, duration, schedule, rotation, mirror, suspended, group_rule)
+       SELECT ?, asset_id, ordem, duration, schedule, rotation, mirror, suspended, group_rule
          FROM playlist_items WHERE playlist_id = ?`
     ).run(newId, src.id);
     db.exec('COMMIT');
@@ -401,6 +409,11 @@ router.patch('/:id/items/:itemId', (req, res) => {
     const s = validateSchedule(b.schedule);
     if (!s.ok) return res.status(400).json({ error: s.error });
     sets.push('schedule = ?'); vals.push(s.value ? JSON.stringify(s.value) : null);
+  }
+  if (b.group_rule !== undefined) {
+    const gr = validateGroupRule(b.group_rule);
+    if (!gr.ok) return res.status(400).json({ error: gr.error });
+    sets.push('group_rule = ?'); vals.push(gr.value ? JSON.stringify(gr.value) : null);
   }
   {
     const rot = parseRotation(b.rotation, { nullable: true });

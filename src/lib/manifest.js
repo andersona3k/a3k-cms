@@ -2,6 +2,7 @@
 
 const { getDb } = require('../db');
 const { isActive } = require('./schedule');
+const { groupRuleAllows } = require('./groupRule');
 
 // Resolve qual playlist um device deve tocar.
 // M1: apenas assignment direto no device. Heranca de grupo entra no M4.
@@ -28,12 +29,13 @@ function resolvePlaylistId(db, device) {
 
 // Itens de uma playlist no formato do manifest (mesmo shape p/ device e preview).
 // `activeAt` (Date) opcional: filtra pelo day-parting naquele instante.
-function playlistManifestItems(db, playlistId, activeAt) {
+// `groupId` (number|null) opcional: quando passado, aplica a regra de grupo do item.
+function playlistManifestItems(db, playlistId, activeAt, groupId) {
   // itens suspensos nunca entram no manifest.
   const rows = db
     .prepare(
-      `SELECT pi.id, pi.ordem, pi.duration, pi.schedule, pi.rotation, pi.mirror,
-              a.type, a.filename, a.url, a.hash, a.size_bytes, a.mime
+      `SELECT pi.id, pi.ordem, pi.duration, pi.schedule, pi.rotation, pi.mirror, pi.group_rule,
+              a.type, a.filename, a.url, a.hash, a.size_bytes, a.mime, a.schedule AS asset_schedule
          FROM playlist_items pi
          JOIN assets a ON a.id = pi.asset_id
         WHERE pi.playlist_id = ? AND pi.suspended = 0
@@ -42,10 +44,10 @@ function playlistManifestItems(db, playlistId, activeAt) {
     .all(playlistId);
 
   let items = rows.map((r) => {
+    // condicional: item (personalizada) sobrepoe; senao herda a do arquivo (biblioteca)
     let schedule = null;
-    if (r.schedule) {
-      try { schedule = JSON.parse(r.schedule); } catch { schedule = null; }
-    }
+    if (r.schedule) { try { schedule = JSON.parse(r.schedule); } catch { schedule = null; } }
+    if (!schedule && r.asset_schedule) { try { schedule = JSON.parse(r.asset_schedule); } catch { schedule = null; } }
     return {
       id: r.id,
       type: r.type,
@@ -59,8 +61,14 @@ function playlistManifestItems(db, playlistId, activeAt) {
       // NULL = herda a orientacao da playlist
       rotation: r.rotation,
       mirror: r.mirror,
+      _groupRule: r.group_rule,
     };
   });
+
+  if (groupId !== undefined) {
+    items = items.filter((it) => groupRuleAllows(it._groupRule, groupId));
+  }
+  items.forEach((it) => { delete it._groupRule; });
 
   if (activeAt instanceof Date) {
     items = items.filter((it) => isActive(it.schedule, activeAt));
@@ -69,7 +77,8 @@ function playlistManifestItems(db, playlistId, activeAt) {
 }
 
 // Manifest de uma playlist isolada (usado pelo preview do admin).
-function buildPlaylistManifest(playlist, activeAt) {
+// `groupId` passado so no manifest de device -> aplica as regras de grupo por item.
+function buildPlaylistManifest(playlist, activeAt, groupId) {
   const db = getDb();
   return {
     playlist: { id: playlist.id, name: playlist.name },
@@ -79,7 +88,7 @@ function buildPlaylistManifest(playlist, activeAt) {
     suspended: playlist.suspended ? 1 : 0,
     generatedAt: new Date().toISOString(),
     // playlist suspensa -> nao entrega nada (o player fica em "nada programado")
-    items: playlist.suspended ? [] : playlistManifestItems(db, playlist.id, activeAt),
+    items: playlist.suspended ? [] : playlistManifestItems(db, playlist.id, activeAt, groupId),
   };
 }
 
@@ -105,7 +114,7 @@ function buildManifest(device) {
   return {
     deviceId: device.id,
     serial: device.serial,
-    ...buildPlaylistManifest(playlist),
+    ...buildPlaylistManifest(playlist, undefined, device.group_id || null),
   };
 }
 

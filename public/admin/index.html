@@ -171,7 +171,7 @@
   .pstat.arquivada{ background:#2a3947; color:var(--mut); }
   #plEditModal, #plAddModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
   #plAddModal { z-index:33; }
-  #plEditModal .modalBox { width:min(980px,95vw); max-height:92vh; overflow:auto; }
+  #plEditBox { width:96vw; max-width:96vw; height:94vh; max-height:94vh; display:flex; flex-direction:column; gap:8px; overflow:hidden; }
   #plEditModal .modalBox select, #plEditModal .modalBox input,
   #plAddModal .modalBox select, #plAddModal .modalBox input { width:auto; }
   #plEditNameWrap { display:inline-flex; align-items:center; gap:6px; font-weight:700; }
@@ -179,6 +179,22 @@
   #plEditNameWrap .iconbtn { border:1px solid var(--line); background:#0d141c; color:var(--mut);
     border-radius:6px; padding:2px 7px; font-size:12px; cursor:pointer; line-height:1; }
   #plEditNameWrap .iconbtn:hover { color:var(--fg); }
+  #plItemsGrid.pligrid { flex:0 0 auto; max-height:320px; overflow-y:auto; }
+  #pliBlocks { flex:1; min-height:0; display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .pliblk { border:1px solid var(--line); border-radius:9px; background:#0b1219; display:flex; flex-direction:column; min-height:0; }
+  .pliblk-h { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; padding:8px 10px; border-bottom:1px solid var(--line); }
+  .pliblk-b { padding:10px; overflow:auto; flex:1; font-size:12px; }
+  .pliblk-b dl { display:grid; grid-template-columns:96px 1fr; gap:3px 8px; margin:0 0 8px; }
+  .pliblk-b dt { color:var(--mut); } .pliblk-b dd { margin:0; word-break:break-all; }
+  .pliblk-b label { display:block; margin:8px 0 3px; color:var(--mut); font-size:11px; }
+  .pliblk-b .radiorow { display:flex; align-items:center; gap:6px; margin:4px 0; font-size:12px; color:var(--fg); cursor:pointer; }
+  .pliblk-b .radiorow input { width:auto; margin:0; }
+  .pliblk-b select, .pliblk-b input { width:100%; }
+  .pliblk-b .chip { display:inline-flex; align-items:center; gap:4px; background:#1b2c3f; border:1px solid var(--line);
+    border-radius:999px; padding:2px 8px; font-size:11px; margin:2px 4px 2px 0; }
+  .pliblk-b .chip button { border:0; background:transparent; color:var(--mut); cursor:pointer; padding:0; font-size:12px; }
+  .pli.sel { outline:2px solid var(--acc); outline-offset:-2px; }
+  @media (max-width:960px) { #pliBlocks { grid-template-columns:1fr; } }
 
   .pligrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; margin-top:8px; }
   .pli { position:relative; border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#0d141c; cursor:grab; }
@@ -482,7 +498,7 @@
 </div>
 
 <div id="plEditModal" class="hidden">
-  <div class="modalBox">
+  <div class="modalBox" id="plEditBox">
     <div class="row" style="justify-content:space-between;align-items:center">
       <span id="plEditNameWrap"></span>
       <span style="display:flex;gap:6px;align-items:center">
@@ -491,7 +507,7 @@
         <button class="ghost" id="plEditClose" title="Fechar" style="font-size:15px;line-height:1;padding:6px 10px">✕</button>
       </span>
     </div>
-    <p class="muted" id="plEditInfo" style="font-size:12px;margin:2px 0 12px"></p>
+    <p class="muted" id="plEditInfo" style="font-size:12px;margin:2px 0 10px"></p>
     <div class="row" style="align-items:end">
       <div><label>Orientação</label><select id="plRotation">
         <option value="0">Horizontal</option>
@@ -504,14 +520,17 @@
       <div><label>Vigência — início</label><input type="date" id="plEditFrom" /></div>
       <div><label>Vigência — fim</label><input type="date" id="plEditUntil" /></div>
     </div>
-    <div class="row" style="justify-content:space-between;margin-top:16px">
-      <b style="font-size:13px">Itens da playlist</b>
+    <div class="row" style="justify-content:space-between;margin-top:12px">
+      <b style="font-size:13px">Itens da playlist <span class="muted" style="font-weight:400">— clique num item p/ ver detalhes / condicional / reprodução</span></b>
       <button id="plAddBtn">+ adicionar conteúdo</button>
     </div>
     <div id="plItemsGrid" class="pligrid"></div>
     <p class="muted" id="plItemsEmpty" style="display:none">Sem itens. Use "+ adicionar conteúdo".</p>
-    <p class="muted" id="plVersion" style="font-size:11px"></p>
-    <p class="muted" style="font-size:11px">Arraste os quadros para mudar a ordem. A duração da imagem salva ao sair do campo.</p>
+    <div id="pliBlocks">
+      <div class="pliblk"><div class="pliblk-h">Detalhes do arquivo</div><div id="pliDetBlock" class="pliblk-b"></div></div>
+      <div class="pliblk"><div class="pliblk-h">Condicional</div><div id="pliCondBlock" class="pliblk-b"></div></div>
+      <div class="pliblk"><div class="pliblk-h">Reprodução</div><div id="pliRepBlock" class="pliblk-b"></div></div>
+    </div>
   </div>
 </div>
 
@@ -1416,6 +1435,7 @@
   function openPlEdit(id) {
     state.activePlaylist = id;
     _plNameEditing = false;
+    _pliSel = null; clearPliBlocks();
     var p = (state.playlists || []).find(function (x) { return x.id === id; }) || { id: id, name: '#' + id };
     renderPlEditName(p);
     $('plRotation').value = oriValue(p);
@@ -1428,7 +1448,7 @@
     $('plEditModal').classList.remove('hidden');
     loadPlaylistItems();
   }
-  function closePlEdit() { $('plEditModal').classList.add('hidden'); state.activePlaylist = null; _plNameEditing = false; }
+  function closePlEdit() { $('plEditModal').classList.add('hidden'); state.activePlaylist = null; _plNameEditing = false; _pliSel = null; }
   $('plEditClose').onclick = function () { closePlEdit(); loadPlaylists(); };
   $('plEditCfgSave').onclick = function () {
     if (!state.activePlaylist) return;
@@ -1470,9 +1490,8 @@
         if (it.hash && !seen[it.hash]) { seen[it.hash] = 1; totB += (it.size_bytes || 0); }
         if (!it.suspended) totD += (it.duration || 0);
       });
-      $('plEditInfo').textContent = d.items.length + ' item(s) · ' + fmtMB(totB) + ' · ' + fmtDur(totD) +
-        ' · orientação ' + oriLabel(d.playlist.rotation, d.playlist.mirror);
-      $('plVersion').textContent = 'v' + d.playlist.version;
+      $('plEditInfo').textContent = 'v' + d.playlist.version + ' · ' + d.items.length + ' item(s) · ' + fmtMB(totB) + ' · ' +
+        fmtDur(totD) + ' · orientação ' + oriLabel(d.playlist.rotation, d.playlist.mirror);
       $('plItemsEmpty').style.display = d.items.length ? 'none' : 'block';
 
       d.items.forEach(function (it, idx) {
@@ -1489,7 +1508,8 @@
         var dur = it.duration_locked
           ? '<span class="plidurlock" title="duração do vídeo">' + Math.round(it.duration) + 's 🔒</span>'
           : '<input class="pliDur" type="number" min="0.5" step="0.5" value="' + it.duration + '" title="duração (s)">';
-        var sdot = it.schedule ? (it.active_now ? '<span style="color:#5fd08a">●</span>' : '<span style="color:#e0a12f">●</span>') : '';
+        var effSched = it.schedule || it.asset_schedule;
+        var sdot = effSched ? (it.active_now ? '<span style="color:#5fd08a">●</span>' : '<span style="color:#e0a12f">●</span>') : '';
         tile.innerHTML =
           '<span class="plinum">' + (idx + 1) + '</span>' +
           '<span class="plitype" title="' + it.type + '">' + typeIcon + '</span>' +
@@ -1515,9 +1535,20 @@
         };
         tile.querySelector('.pli-del').onclick = function () {
           api('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { method: 'DELETE' })
-            .then(function () { log('item removido'); loadPlaylistItems(); loadPlaylists(); }).catch(function (e) { log(e.message); });
+            .then(function () { log('item removido'); if (_pliSel === it.id) _pliSel = null; loadPlaylistItems(); loadPlaylists(); }).catch(function (e) { log(e.message); });
         };
+        if (String(it.id) === String(_pliSel)) tile.classList.add('sel');
+        tile.addEventListener('click', function (e) {
+          if (e.target.closest('button, input, a')) return;
+          selectPli(it);
+        });
       });
+
+      // reidrata os blocos do item selecionado (dados frescos)
+      if (_pliSel != null) {
+        var cur = d.items.find(function (x) { return x.id === _pliSel; });
+        if (cur) renderPliBlocks(cur); else { _pliSel = null; clearPliBlocks(); }
+      }
 
       if (sortable) sortable.destroy();
       sortable = window.Sortable && window.Sortable.create(grid, {
@@ -1530,6 +1561,150 @@
         },
       });
     });
+  }
+
+  // ---- blocos do item selecionado (Detalhes / Condicional / Reproducao) ----
+  var _pliSel = null;
+  function clearPliBlocks() {
+    ['pliDetBlock', 'pliCondBlock', 'pliRepBlock'].forEach(function (id) {
+      $(id).innerHTML = '<p class="muted">Selecione um item acima.</p>';
+    });
+  }
+  function selectPli(it) {
+    _pliSel = it.id;
+    var g = $('plItemsGrid').querySelectorAll('.pli');
+    for (var i = 0; i < g.length; i++) g[i].classList.toggle('sel', g[i].getAttribute('data-item') == it.id);
+    renderPliBlocks(it);
+  }
+  function renderPliBlocks(it) { renderPliDet(it); renderPliCond(it); renderPliRep(it); }
+  function pliPatch(it, body, verb) {
+    return jpost('/api/playlists/' + state.activePlaylist + '/items/' + it.id, body, 'PATCH')
+      .then(function () { if (verb) log('item ' + it.id + ': ' + verb); loadPlaylistItems(); loadPlaylists(); })
+      .catch(function (e) { log('item: ' + (e.body && e.body.error || e.message)); });
+  }
+
+  function renderPliDet(it) {
+    var b = $('pliDetBlock');
+    var rows;
+    if (it.type === 'video') {
+      rows = row('Tipo', 'vídeo') + row('Formato', prettyCodec(it.codec)) + row('Resolução', resOf(it)) +
+        row('Duração', it.asset_duration != null ? Number(it.asset_duration).toFixed(1) + 's' : '—') +
+        row('FPS', it.fps != null ? it.fps : '—') + row('Bitrate', fmtMbps(it.bitrate)) +
+        row('Tamanho', fmtBytes(it.size_bytes));
+    } else if (it.type === 'audio') {
+      rows = row('Tipo', 'áudio') + row('Formato', prettyCodec(it.codec)) +
+        row('Duração', it.asset_duration != null ? Number(it.asset_duration).toFixed(1) + 's' : '—') +
+        row('Bitrate', fmtMbps(it.bitrate)) + row('Tamanho', fmtBytes(it.size_bytes));
+    } else {
+      rows = row('Tipo', 'imagem') + row('Formato', String(it.format || it.mime || '—').toUpperCase()) +
+        row('Resolução', resOf(it)) + row('Tamanho', fmtBytes(it.size_bytes));
+    }
+    rows += row('Análise', '<span class="pill ' + it.probe_status + '">' + (PROBE_TXT[it.probe_status] || it.probe_status) + '</span>');
+    b.innerHTML = '<b>' + esc(it.filename) + '</b><dl style="margin-top:8px">' + rows + '</dl>' +
+      '<p class="muted" style="font-size:11px">Estes dados vêm do arquivo na Biblioteca.</p>';
+  }
+
+  // ---- condicional: da biblioteca (asset.schedule) OU personalizada (item.schedule) ----
+  function schedSummary(s) {
+    if (!s) return 'sem condicional';
+    var p = [];
+    if (s.from || s.until) p.push((s.from || '…').replace('T', ' ') + ' → ' + (s.until || '…').replace('T', ' '));
+    if (Array.isArray(s.days) && s.days.length) p.push(s.days.map(function (d) { return DAY_LABELS[d - 1]; }).join(','));
+    if (s.start || s.end) p.push((s.start || '00:00') + '–' + (s.end || '24:00'));
+    return p.join(' · ') || 'sempre no ar';
+  }
+  function renderPliCond(it) {
+    var b = $('pliCondBlock');
+    var hasLib = !!it.asset_schedule;
+    var mode = it.schedule ? 'custom' : (hasLib ? 'lib' : 'custom');
+    b.innerHTML =
+      '<div style="font-size:11px" class="muted">Condicional da biblioteca: ' +
+        (hasLib ? '<b style="color:#5fd08a">✓ ' + esc(schedSummary(it.asset_schedule)) + '</b>' : '<span>não há</span>') + '</div>' +
+      '<label class="radiorow"><input type="radio" name="pliCondMode" value="lib"' + (mode === 'lib' ? ' checked' : '') +
+        (hasLib ? '' : ' disabled') + '> Da biblioteca</label>' +
+      '<label class="radiorow"><input type="radio" name="pliCondMode" value="custom"' + (mode === 'custom' ? ' checked' : '') + '> Personalizada (só nesta playlist)</label>' +
+      '<div id="pliCondBody" style="margin-top:8px"></div>';
+    var body = b.querySelector('#pliCondBody');
+    function paint(m) {
+      if (m === 'lib') {
+        body.innerHTML = '<p class="muted" style="font-size:11px">Este item usa a condicional definida na Biblioteca para o arquivo. Não altera o arquivo.</p>';
+        return;
+      }
+      var s = it.schedule || it.asset_schedule || {};
+      var chips = DIAS.map(function (dd) {
+        return '<span class="daychip' + ((s.days || []).indexOf(dd[1]) >= 0 ? ' on' : '') + '" data-d="' + dd[1] + '">' + dd[0] + '</span>';
+      }).join('');
+      body.innerHTML =
+        '<label>Validade — início (data e hora)</label><input type="datetime-local" id="pcFrom" value="' + (s.from || '') + '">' +
+        '<label>Validade — fim (data e hora)</label><input type="datetime-local" id="pcUntil" value="' + (s.until || '') + '">' +
+        '<label>Dias da semana <span class="muted">(nenhum = todos)</span></label><div class="daychips" id="pcDays">' + chips + '</div>' +
+        '<label>Horário (24h) — exibir entre</label><div class="timepair"><input type="time" id="pcStart" value="' + (s.start || '') + '">' +
+        '<span class="muted">e</span><input type="time" id="pcEnd" value="' + (s.end || '') + '"></div>' +
+        '<div class="row" style="margin-top:10px"><button id="pcSave">Salvar condicional</button>' +
+        '<button class="ghost" id="pcClear">Limpar</button></div>';
+      body.querySelector('#pcDays').onclick = function (e) { if (e.target.classList.contains('daychip')) e.target.classList.toggle('on'); };
+      body.querySelector('#pcSave').onclick = function () {
+        var days = [].map.call(body.querySelectorAll('#pcDays .daychip.on'), function (c) { return Number(c.dataset.d); });
+        var out = {
+          from: body.querySelector('#pcFrom').value || undefined,
+          until: body.querySelector('#pcUntil').value || undefined,
+          days: days.length ? days : undefined,
+          start: body.querySelector('#pcStart').value || undefined,
+          end: body.querySelector('#pcEnd').value || undefined,
+        };
+        var any = out.from || out.until || out.days || out.start || out.end;
+        pliPatch(it, { schedule: any ? out : null }, 'condicional personalizada salva');
+      };
+      body.querySelector('#pcClear').onclick = function () { pliPatch(it, { schedule: null }, 'condicional personalizada limpa'); };
+    }
+    paint(mode);
+    b.querySelectorAll('input[name="pliCondMode"]').forEach(function (r) {
+      r.onchange = function () {
+        if (this.value === 'lib') pliPatch(it, { schedule: null }, 'volta p/ condicional da biblioteca');
+        else paint('custom');
+      };
+    });
+  }
+
+  // ---- reproducao: regra de grupo (allow = só esses / deny = todos menos esses) ----
+  function renderPliRep(it) {
+    var b = $('pliRepBlock');
+    var gr = it.group_rule || {};
+    var work = { mode: gr.mode === 'deny' ? 'deny' : 'allow', groups: (gr.groups || []).slice() };
+    function paint() {
+      var grpOpts = (state.groups || []).map(function (g) { return '<option value="' + g.id + '">' + esc(g.name) + '</option>'; }).join('');
+      var chips = work.groups.map(function (id) {
+        var g = (state.groups || []).find(function (x) { return x.id === id; });
+        return '<span class="chip">' + esc(g ? g.name : ('#' + id)) + ' <button data-id="' + id + '">✕</button></span>';
+      }).join('') || '<span class="muted" style="font-size:11px">nenhum grupo</span>';
+      b.innerHTML =
+        '<label class="radiorow"><input type="radio" name="pliRepMode" value="allow"' + (work.mode === 'allow' ? ' checked' : '') + '> Reproduzir <b>apenas</b> nos grupos</label>' +
+        '<label class="radiorow"><input type="radio" name="pliRepMode" value="deny"' + (work.mode === 'deny' ? ' checked' : '') + '> <b>Não</b> reproduzir nos grupos</label>' +
+        '<div class="row" style="margin-top:6px"><select id="prSel"><option value="">— grupo —</option>' + grpOpts + '</select>' +
+        '<button id="prAdd">adicionar</button></div>' +
+        '<div style="margin:8px 0">' + chips + '</div>' +
+        '<div class="row"><button id="prSave">Salvar</button><button class="ghost" id="prClear">limpar</button></div>' +
+        '<p class="muted" style="font-size:11px;margin-top:8px">' +
+        (work.mode === 'allow'
+          ? 'Só os grupos marcados exibem este item; os demais pulam (mas tocam o resto da playlist).'
+          : 'Todos exibem este item, menos os grupos marcados.') + '</p>';
+      b.querySelectorAll('input[name="pliRepMode"]').forEach(function (r) {
+        r.onchange = function () { work.mode = this.value; paint(); };
+      });
+      b.querySelector('#prAdd').onclick = function () {
+        var v = Number(b.querySelector('#prSel').value);
+        if (v && work.groups.indexOf(v) < 0) work.groups.push(v);
+        paint();
+      };
+      b.querySelectorAll('.chip button').forEach(function (x) {
+        x.onclick = function () { var id = Number(this.dataset.id); work.groups = work.groups.filter(function (g) { return g !== id; }); paint(); };
+      });
+      b.querySelector('#prSave').onclick = function () {
+        pliPatch(it, { group_rule: work.groups.length ? { mode: work.mode, groups: work.groups } : null }, 'regra de reprodução salva');
+      };
+      b.querySelector('#prClear').onclick = function () { pliPatch(it, { group_rule: null }, 'regra de reprodução limpa'); };
+    }
+    paint();
   }
 
   // ---- caixa "adicionar conteudo" (workspace: fica aberta ao adicionar) ----

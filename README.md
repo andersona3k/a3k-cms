@@ -125,6 +125,20 @@ Sem metadados (ffprobe/sharp fica no M2), sem drag-drop (M3), sem grupos (M4).
   (preview "como fica as 14h"). `GET /api/playlists/:id` traz `active_now` por item.
 - `/admin/`: coluna **Horario** por item (resumo + bolinha no ar/fora) + editor
   (dias, inicio/fim, intervalo de datas).
+- **Condicional herdada + `from`/`until` com hora** (migration 013): `from`/`until`
+  aceitam `YYYY-MM-DD` **ou** `YYYY-MM-DDTHH:MM` (`isActive` compara no mesmo
+  comprimento). No manifest, o item **herda a `schedule` do arquivo** (Biblioteca,
+  `assets.schedule`) quando `playlist_items.schedule` e null; uma condicional
+  personalizada no item sobrepoe sem tocar no arquivo. Editor: bloco "Condicional"
+  com radio "Da biblioteca" (so quando o asset tem uma) vs "Personalizada"
+  (data+hora / dias / horario 24h, salva em `playlist_items.schedule`).
+- **Reproducao por grupo** (`playlist_items.group_rule` JSON, migration 013):
+  `null` = todos os grupos exibem; `{mode:'allow',groups:[ids]}` = SO esses grupos
+  exibem o item; `{mode:'deny',groups:[ids]}` = esses grupos pulam, os demais
+  exibem. `src/lib/groupRule.js` (`validateGroupRule` / `groupRuleAllows`);
+  `buildManifest` filtra por `device.group_id`, o preview do admin (sem grupo)
+  mostra tudo. Editor: bloco "Reproducao" (escolhe grupos + radio Reproduzir/
+  Nao reproduzir).
 
 ### Fase 3 — apps nativos (em andamento)
 
@@ -182,7 +196,7 @@ Superadmin manda `X-Company-Id` p/ atuar em outra empresa.
 | GET  | `/api/playlists` · `/api/playlists/:id` | lista / detalhe com itens |
 | GET  | `/api/playlists/:id/manifest[?active_at=<ISO>\|now]` | preview; com `active_at` filtra o day-parting |
 | POST | `/api/playlists/:id/items` | `{asset_id,duration?,ordem?,schedule?}` (bumpa version) |
-| PATCH | `/api/playlists/:id/items/:itemId` | `{duration?,ordem?,schedule?}` (`schedule:null` limpa) |
+| PATCH | `/api/playlists/:id/items/:itemId` | `{duration?,ordem?,schedule?,group_rule?}` (`schedule`/`group_rule` `:null` limpa) |
 | PUT  | `/api/playlists/:id/items` | `{items:[{asset_id,duration,schedule?}]}` substitui tudo |
 | PUT  | `/api/playlists/:id/order` | `{item_ids:[...]}` reordena (bumpa version) |
 | DELETE | `/api/playlists/:id/items/:itemId` | remove item (bumpa version) |
@@ -302,13 +316,19 @@ public/
                        📥/📤 arquivar · 🗑 remover; tooltip no hover). "Remover"
                        so habilita se a playlist NAO estiver vinculada a um player
                        — se estiver, fica disabled + "⚠ em uso" embaixo). Clicar
-                       na linha abre #plEditModal: nome editavel
+                       na linha abre #plEditModal (TELA CHEIA 96vw×94vh): nome editavel
                        inline (lapis ✎). Header: [▶ Preview] [💾 Salvar] [✕] a
                        direita; sem "Apagar playlist" (fica so o 🗑 na lista).
                        Label "Repositorio", linha de info com o TAMANHO TOTAL
                        (atualiza ao adicionar) + duracao; itens em QUADROS/
-                       miniaturas numerados (icone de tipo 🖼️/🎬 no canto),
-                       drag p/ reordenar, duracao editavel na imagem + ✕/⊘/🕐; "+ adicionar conteudo" abre #plAddModal (tela
+                       miniaturas numerados (max 2 linhas, scroll; icone de tipo
+                       🖼️/🎬 no canto), drag p/ reordenar, duracao editavel na
+                       imagem + ✕/⊘/🕐. Clicar num quadro abre #pliBlocks (3
+                       colunas): "Detalhes do arquivo" (dados da Biblioteca),
+                       "Condicional" (radio Da biblioteca vs Personalizada ->
+                       playlist_items.schedule), "Reproducao" (grupos + radio
+                       Reproduzir / Nao reproduzir -> playlist_items.group_rule).
+                       "+ adicionar conteudo" abre #plAddModal (tela
                        quase cheia): 4 colunas = arvore de pastas (Explorer) |
                        Repositorio (miniaturas QUADRADAS, auto-fill) | meio |
                        Selecao (Repositorio e Selecao dividem metade cada). No
@@ -331,7 +351,7 @@ node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m14.test.js  testes de aceite (139 no total)
+  m0..m15.test.js  testes de aceite (143 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -348,7 +368,9 @@ superadmin) grava `media/logo-c<id>.<ext>` servido em `/assets/`. `GET
 `folders`, `assets` — biblioteca (colunas de metadados nullable ate o M2).
 `playlists` (com `version`; migration 011 add `folder_id`, `created_by`,
 `valid_from`/`valid_until` [YYYY-MM-DD], `suspended`, `archived`),
-`playlist_folders` (arvore, 011), `playlist_items` (com `schedule` JSON de day-parting, M6).
+`playlist_folders` (arvore, 011), `playlist_items` (`schedule` JSON de day-parting
+M6 — null herda `assets.schedule`; `group_rule` JSON `{mode:'allow'|'deny',groups:[]}`
+na migration 013).
 `GET /api/playlists` calcula `content_type` (video/imagem/mix), `total_duration`,
 `total_bytes` (soma dos `size_bytes` dos assets distintos), `assigned` e `status`
 (vencida/em_uso/planejada). `PATCH { name }` renomeia (409 em colisao). Playlist `suspended` -> manifest
