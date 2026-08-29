@@ -56,6 +56,23 @@ git reset --hard em `origin/master` + `npm ci --omit=dev` + `npm run migrate`
 (as migrações também rodam sozinhas no boot) + `systemctl restart a3k-cms` +
 checagem do `/api/health`.
 
+### Rede que filtra o GitHub
+
+Se a VM não alcança `github.com` (ex.: DNS/firewall corporativo — `getent hosts
+github.com` devolve um IP que não é da GitHub), `deploy.sh` falha no clone.
+Nesse caso o deploy sai da máquina de desenvolvimento:
+
+```bash
+bash deploy/push-deploy.sh a3k-cms-vm
+```
+
+`git archive` do branch atual → `ssh` → `tar -x` em `/opt/a3k-cms` + `npm ci
+--omit=dev --ignore-scripts` + migrate + restart. A VM usa **ffmpeg/ffprobe do
+sistema** (`apt install ffmpeg`, `FFMPEG_PATH`/`FFPROBE_PATH` no `.env`), então
+`ffmpeg-static` (que baixa binário do GitHub) não é necessário —
+`--ignore-scripts` pula esse download. A VM externa, com saída liberada, usa o
+`deploy.sh` normal.
+
 ## VM externa (depois de validar)
 
 1. DNS do domínio → IP da VM. Ajuste `server_name` em
