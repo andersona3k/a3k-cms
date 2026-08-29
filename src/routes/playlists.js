@@ -28,7 +28,7 @@ function itemsOf(db, playlistId) {
     .prepare(
       `SELECT pi.id, pi.asset_id, pi.ordem, pi.duration, pi.schedule,
               pi.rotation, pi.mirror, pi.suspended,
-              a.type, a.filename, a.url, a.hash, a.size_bytes, a.width, a.height, a.format
+              a.type, a.filename, a.url, a.hash, a.size_bytes, a.width, a.height, a.format, a.thumb_url
          FROM playlist_items pi
          JOIN assets a ON a.id = pi.asset_id
         WHERE pi.playlist_id = ?

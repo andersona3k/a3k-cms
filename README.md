@@ -299,9 +299,15 @@ public/
                        Orientacao · Duracao total · Tamanho (MB, soma dos assets
                        distintos) · Criada · Por · Status Em uso/Planejada/Vencida ·
                        Vigencia · Acoes Duplicar/Renomear/Suspender/Arquivar/
-                       Remover). Clicar na linha abre #plEditModal
-                       (a tela de edicao de antes). Arrasta a linha e solta numa
-                       pasta da arvore -> muda folder_id. Raiz "Projeto" nao pode
+                       Remover). Clicar na linha abre #plEditModal: nome editavel
+                       inline (lapis ✎), label "Repositorio", linha de info com o
+                       TAMANHO TOTAL (atualiza ao adicionar) + duracao; itens em
+                       QUADROS/miniaturas numerados, drag p/ reordenar, ✕/⏸/🕐
+                       por item; "+ adicionar conteudo" abre #plAddModal (navega
+                       pelas pastas do repositorio, marca miniaturas, "enviar para
+                       a selecao", "remover" da selecao, "Adicionar a playlist").
+                       Arrasta a linha da lista e solta numa pasta da arvore ->
+                       muda folder_id. Raiz "Projeto" nao pode
                        ser apagada (so renomear / criar subpasta); "(sem pasta)"
                        tem botao "-> Projeto" que move tudo p/ a raiz.
 node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)

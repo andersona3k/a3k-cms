@@ -168,9 +168,38 @@
   .pstat.planejada{ background:#1c2b3b; color:#7fb0e0; }
   .pstat.vencida  { background:#3a1f1f; color:#ed8c8c; }
   .pstat.arquivada{ background:#2a3947; color:var(--mut); }
-  #plEditModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
+  #plEditModal, #plAddModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
+  #plAddModal { z-index:33; }
   #plEditModal .modalBox { width:min(980px,95vw); max-height:92vh; overflow:auto; }
-  #plEditModal .modalBox select, #plEditModal .modalBox input { width:auto; }
+  #plEditModal .modalBox select, #plEditModal .modalBox input,
+  #plAddModal .modalBox select, #plAddModal .modalBox input { width:auto; }
+  #plEditNameWrap { display:inline-flex; align-items:center; gap:6px; font-weight:700; }
+  #plEditNameWrap input { font:inherit; font-weight:700; padding:4px 8px; }
+  #plEditNameWrap .iconbtn { border:1px solid var(--line); background:#0d141c; color:var(--mut);
+    border-radius:6px; padding:2px 7px; font-size:12px; cursor:pointer; line-height:1; }
+  #plEditNameWrap .iconbtn:hover { color:var(--fg); }
+
+  .pligrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(128px,1fr)); gap:10px; margin-top:8px; }
+  .pli { position:relative; border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#0d141c; cursor:grab; }
+  .pli.sortable-ghost { opacity:.35; } .pli.sortable-chosen { border-color:var(--acc); }
+  .pli .plithumb { height:82px; display:flex; align-items:center; justify-content:center; background:#000; font-size:28px; }
+  .pli .plithumb img { width:100%; height:100%; object-fit:cover; }
+  .pli .plinum { position:absolute; top:4px; left:4px; background:var(--acc); color:#fff; font-size:11px;
+    font-weight:700; min-width:18px; height:18px; border-radius:5px; display:flex; align-items:center; justify-content:center; padding:0 4px; }
+  .pli.susp { opacity:.5; }
+  .pli .pliname { padding:5px 7px 2px; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pli .pliact { display:flex; gap:2px; align-items:center; padding:0 5px 6px; font-size:11px; }
+  .pli .pliact button { border:0; background:transparent; color:var(--mut); cursor:pointer; padding:1px 4px; font-size:12px; }
+  .pli .pliact button:hover { color:var(--fg); }
+  .pli .pliact .pliDur { width:52px; font-size:11px; padding:2px 4px; }
+
+  .pladd-wrap { display:grid; grid-template-columns:1fr auto 1fr; gap:12px; align-items:start; margin-top:6px; }
+  .pladd-col { border:1px solid var(--line); border-radius:9px; padding:8px; background:#0b1219; }
+  .pladd-col-h { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+  .pladd-mid { display:flex; flex-direction:column; gap:8px; padding-top:40px; }
+  .pladd-mid button { white-space:nowrap; font-size:12px; }
+  #plAddGrid .atile.sel, #plAddSelGrid .atile.sel { outline:2px solid var(--acc); outline-offset:-2px; }
+  @media (max-width:820px) { .pladd-wrap { grid-template-columns:1fr; } .pladd-mid { flex-direction:row; padding-top:0; } }
   .assetgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:12px; }
   .atile { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#0d141c; cursor:grab; }
   .atile:hover { border-color:var(--acc); }
@@ -419,11 +448,12 @@
 
 <div id="plEditModal" class="hidden">
   <div class="modalBox">
-    <div class="row" style="justify-content:space-between">
-      <b id="plEditName">Playlist</b>
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <span id="plEditNameWrap"></span>
       <button class="ghost" id="plEditClose">fechar</button>
     </div>
-    <div class="row" style="margin-top:10px;align-items:end">
+    <p class="muted" id="plEditInfo" style="font-size:12px;margin:2px 0 12px"></p>
+    <div class="row" style="align-items:end">
       <div><label>Orientação</label><select id="plRotation">
         <option value="0">Horizontal</option>
         <option value="90">V 90°</option>
@@ -431,24 +461,49 @@
         <option value="270">V 270°</option>
         <option value="180">Invertido (180°)</option>
       </select></div>
-      <div><label>Pasta</label><select id="plEditFolder"></select></div>
+      <div><label>Repositório</label><select id="plEditFolder"></select></div>
       <div><label>Vigência — início</label><input type="date" id="plEditFrom" /></div>
       <div><label>Vigência — fim</label><input type="date" id="plEditUntil" /></div>
       <button id="plEditCfgSave">Salvar config.</button>
-    </div>
-    <div class="row" style="margin-top:10px;align-items:end">
-      <div><label>Arquivo</label><select id="plAsset"></select></div>
-      <div><label>Duração (s)</label><input id="plDur" type="number" value="10" style="width:80px" /></div>
-      <button id="plAddBtn">Adicionar item</button>
       <button class="ghost" id="plPreviewBtn">Preview</button>
       <button class="danger" id="plDeleteBtn">Apagar playlist</button>
     </div>
-    <table id="plItemsTbl"><thead><tr>
-      <th style="width:24px"></th><th>#</th><th>Arquivo</th><th>Tipo</th><th>Formato</th>
-      <th>Orientação</th><th>Duração</th><th>Horário</th><th>Ações</th>
-    </tr></thead><tbody id="plItemsBody"></tbody></table>
-    <p class="muted" id="plVersion"></p>
-    <p class="muted" style="font-size:11px">Arraste pela alça <span style="cursor:grab">⠿</span> para reordenar. A duração salva ao sair do campo.</p>
+    <div class="row" style="justify-content:space-between;margin-top:16px">
+      <b style="font-size:13px">Itens da playlist</b>
+      <button id="plAddBtn">+ adicionar conteúdo</button>
+    </div>
+    <div id="plItemsGrid" class="pligrid"></div>
+    <p class="muted" id="plItemsEmpty" style="display:none">Sem itens. Use "+ adicionar conteúdo".</p>
+    <p class="muted" id="plVersion" style="font-size:11px"></p>
+    <p class="muted" style="font-size:11px">Arraste os quadros para mudar a ordem. A duração da imagem salva ao sair do campo.</p>
+  </div>
+</div>
+
+<div id="plAddModal" class="hidden">
+  <div class="modalBox" style="width:min(1000px,96vw);max-height:92vh;overflow:auto">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <b>Adicionar conteúdo</b>
+      <button class="ghost" id="plAddClose">fechar</button>
+    </div>
+    <div id="plAddCrumb" class="muted" style="font-size:12px;margin:8px 0"></div>
+    <div id="plAddSubfolders" class="modrow" style="margin-bottom:8px"></div>
+    <div class="pladd-wrap">
+      <div class="pladd-col">
+        <div class="pladd-col-h">Repositório</div>
+        <div id="plAddGrid" class="assetgrid" style="max-height:46vh;overflow:auto"></div>
+      </div>
+      <div class="pladd-mid">
+        <button id="plAddSend">enviar para a seleção →</button>
+        <button class="ghost" id="plAddSendBack">← remover</button>
+      </div>
+      <div class="pladd-col">
+        <div class="pladd-col-h">Seleção (<span id="plAddSelN">0</span>)</div>
+        <div id="plAddSelGrid" class="assetgrid" style="max-height:46vh;overflow:auto"></div>
+      </div>
+    </div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button id="plAddConfirm">Adicionar à playlist</button>
+    </div>
   </div>
 </div>
 
@@ -1267,15 +1322,47 @@
   }
 
   // ---- modal de edicao da playlist ----
+  var _plNameEditing = false;
+  function renderPlEditName(p) {
+    var wrap = $('plEditNameWrap'); wrap.innerHTML = '';
+    if (_plNameEditing) {
+      var inp = document.createElement('input'); inp.value = p.name;
+      var ok = document.createElement('button'); ok.className = 'iconbtn'; ok.textContent = '✓'; ok.title = 'salvar';
+      var no = document.createElement('button'); no.className = 'iconbtn'; no.textContent = '✕'; no.title = 'cancelar';
+      wrap.appendChild(inp); wrap.appendChild(ok); wrap.appendChild(no);
+      inp.focus(); inp.select();
+      function save() {
+        var n = inp.value.trim(); _plNameEditing = false;
+        if (!n || n === p.name) { renderPlEditName(p); return; }
+        jpost('/api/playlists/' + p.id, { name: n }, 'PATCH')
+          .then(function () { log('playlist #' + p.id + ' renomeada p/ "' + n + '"'); return loadPlaylists(); })
+          .then(function () { renderPlEditName((state.playlists || []).find(function (x) { return x.id === p.id; }) || p); })
+          .catch(function (e) { log('renomear: ' + (e.body && e.body.error || e.message)); renderPlEditName(p); });
+      }
+      ok.onclick = save;
+      no.onclick = function () { _plNameEditing = false; renderPlEditName(p); };
+      inp.onkeydown = function (e) {
+        if (e.key === 'Enter') save();
+        if (e.key === 'Escape') { _plNameEditing = false; renderPlEditName(p); }
+      };
+    } else {
+      var nm = document.createElement('span'); nm.textContent = p.name;
+      var vv = document.createElement('span'); vv.className = 'muted'; vv.style.fontWeight = '400';
+      vv.textContent = p.version ? ' — v' + p.version : '';
+      var pen = document.createElement('button'); pen.className = 'iconbtn'; pen.textContent = '✎'; pen.title = 'renomear';
+      pen.onclick = function () { _plNameEditing = true; renderPlEditName(p); };
+      wrap.appendChild(nm); wrap.appendChild(vv); wrap.appendChild(pen);
+    }
+  }
+
   function openPlEdit(id) {
     state.activePlaylist = id;
+    _plNameEditing = false;
     var p = (state.playlists || []).find(function (x) { return x.id === id; }) || { id: id, name: '#' + id };
-    $('plEditName').innerHTML = esc(p.name) + (p.version ? ' <span class="muted">— v' + p.version + '</span>' : '') +
-      ' <button class="ghost" id="plRenameBtn" style="padding:2px 8px;font-size:11px">✎ renomear</button>';
-    $('plRenameBtn').onclick = function () { renamePlaylist(p); };
+    renderPlEditName(p);
     $('plRotation').value = oriValue(p);
     var fsel = $('plEditFolder');
-    fsel.innerHTML = '<option value="">(sem pasta)</option>' + (state.plFolders || []).map(function (f) {
+    fsel.innerHTML = '<option value="">(sem repositório)</option>' + (state.plFolders || []).map(function (f) {
       return '<option value="' + f.id + '"' + (String(f.id) === String(p.folder_id || '') ? ' selected' : '') + '>' + esc(plFolderPath(f.id)) + '</option>';
     }).join('');
     $('plEditFrom').value = p.valid_from || '';
@@ -1283,7 +1370,7 @@
     $('plEditModal').classList.remove('hidden');
     loadPlaylistItems();
   }
-  function closePlEdit() { $('plEditModal').classList.add('hidden'); state.activePlaylist = null; }
+  function closePlEdit() { $('plEditModal').classList.add('hidden'); state.activePlaylist = null; _plNameEditing = false; }
   $('plEditClose').onclick = function () { closePlEdit(); loadPlaylists(); };
   $('plEditCfgSave').onclick = function () {
     if (!state.activePlaylist) return;
@@ -1294,12 +1381,11 @@
     }, 'PATCH').then(function () { log('config da playlist salva'); loadPlaylists(); })
       .catch(function (e) { log('config: ' + e.message); });
   };
-
   $('plRotation').onchange = function () {
     if (!state.activePlaylist) return;
     var v = this.value;
     jpost('/api/playlists/' + state.activePlaylist, { rotation: Number(v.replace('m', '')), mirror: v.indexOf('m') >= 0 ? 1 : 0 }, 'PATCH')
-      .then(function (d) { log('playlist orientação=' + v + ' (v' + d.playlist.version + ')'); loadPlaylists(); })
+      .then(function (d) { log('playlist orientação=' + v + ' (v' + d.playlist.version + ')'); loadPlaylistItems(); loadPlaylists(); })
       .catch(function (e) { log('orientação: ' + e.message); });
   };
   $('plDeleteBtn').onclick = function () {
@@ -1307,13 +1393,7 @@
     var p = (state.playlists || []).find(function (x) { return x.id === state.activePlaylist; }) || { id: state.activePlaylist, name: '#' + state.activePlaylist };
     removePl(p);
   };
-  $('plAddBtn').onclick = function () {
-    if (!state.activePlaylist) return log('selecione uma playlist');
-    jpost('/api/playlists/' + state.activePlaylist + '/items',
-      { asset_id: Number($('plAsset').value), duration: Number($('plDur').value) })
-      .then(function (d) { log('item add, playlist v' + d.version); loadPlaylistItems(); loadPlaylists(); })
-      .catch(function (e) { log('item: ' + e.message); });
-  };
+  $('plAddBtn').onclick = function () { if (state.activePlaylist) openPlAdd(); };
 
   function loadPlaylists() {
     var q = $('plShowArchived') && $('plShowArchived').checked ? '?include_archived=true' : '';
@@ -1324,85 +1404,183 @@
       if (state.activePlaylist && !$('plEditModal').classList.contains('hidden')) return loadPlaylistItems();
     });
   }
+
   var sortable = null;
   function loadPlaylistItems() {
-    var tb = $('plItemsBody');
-    if (!state.activePlaylist) { tb.innerHTML = ''; return Promise.resolve(); }
+    var grid = $('plItemsGrid');
+    if (!grid) return Promise.resolve();
+    if (!state.activePlaylist) { grid.innerHTML = ''; return Promise.resolve(); }
     return api('/api/playlists/' + state.activePlaylist).then(function (d) {
-      tb.innerHTML = '';
-      var plOri = '<span class="muted">' + oriLabel(d.playlist.rotation, d.playlist.mirror) + '</span>';
+      grid.innerHTML = '';
+      var seen = {}, totB = 0, totD = 0;
+      d.items.forEach(function (it) {
+        if (it.hash && !seen[it.hash]) { seen[it.hash] = 1; totB += (it.size_bytes || 0); }
+        if (!it.suspended) totD += (it.duration || 0);
+      });
+      $('plEditInfo').textContent = d.items.length + ' item(s) · ' + fmtMB(totB) + ' · ' + fmtDur(totD) +
+        ' · orientação ' + oriLabel(d.playlist.rotation, d.playlist.mirror);
+      $('plVersion').textContent = 'v' + d.playlist.version;
+      $('plItemsEmpty').style.display = d.items.length ? 'none' : 'block';
+
       d.items.forEach(function (it, idx) {
-        var tr = document.createElement('tr');
-        tr.setAttribute('data-item', it.id);
-        if (it.suspended) tr.style.opacity = '0.45';
+        var tile = document.createElement('div');
+        tile.className = 'pli' + (it.suspended ? ' susp' : '');
+        tile.setAttribute('data-item', it.id);
+        var g = assetGlyph(it.type);
+        var thumb = it.type === 'image'
+          ? '<img src="' + API + it.url + '" alt="" loading="lazy" onerror="this.parentNode.textContent=this.parentNode.dataset.g">'
+          : (it.thumb_url
+              ? '<img src="' + API + it.thumb_url + '" alt="" onerror="this.parentNode.textContent=this.parentNode.dataset.g">'
+              : g);
+        var dur = it.duration_locked
+          ? '<span title="duração do vídeo">' + Math.round(it.duration) + 's 🔒</span>'
+          : '<input class="pliDur" type="number" min="0.5" step="0.5" value="' + it.duration + '">';
+        var sdot = it.schedule ? (it.active_now ? '<span style="color:#5fd08a">●</span>' : '<span style="color:#e0a12f">●</span>') : '';
+        tile.innerHTML =
+          '<span class="plinum">' + (idx + 1) + '</span>' +
+          '<div class="plithumb" data-g="' + g + '">' + thumb + '</div>' +
+          '<div class="pliname" title="' + esc(it.filename) + '">' + esc(it.filename) + '</div>' +
+          '<div class="pliact">' + dur +
+          ' <button class="pli-sched" title="horário">🕐' + sdot + '</button>' +
+          ' <button class="pli-susp" title="' + (it.suspended ? 'retomar' : 'suspender') + '">' + (it.suspended ? '▶' : '⏸') + '</button>' +
+          ' <button class="pli-del" title="remover">✕</button></div>';
+        grid.appendChild(tile);
 
-        // Formato: H/V + resolucao do arquivo
-        var fmt = '<span class="muted">—</span>';
-        if (it.width && it.height) {
-          fmt = (it.width >= it.height ? 'H' : 'V') + ' ' + it.width + '×' + it.height;
-        }
-
-        // Duracao: video = travada (duracao do arquivo); imagem = editavel
-        var durCell = it.duration_locked
-          ? '<span title="duração do vídeo (não editável)">' + Math.round(it.duration) + 's 🔒</span>'
-          : '<input class="durInput" type="number" min="0.5" step="0.5" value="' + it.duration + '" />';
-
-        // Horario: Sempre / Condicional (clicavel)
-        var sdot = it.schedule
-          ? (it.active_now ? '<span title="no ar agora" style="color:#5fd08a">●</span> '
-                           : '<span title="fora do horário" style="color:#e0a12f">●</span> ')
-          : '';
-        var horCell = sdot + '<a href="#" class="sched-btn" style="color:var(--acc)">' +
-          (it.schedule ? 'Condicional' : 'Sempre') + '</a>';
-
-        tr.innerHTML =
-          '<td class="drag" title="arraste">⠿</td><td>' + (idx + 1) + '</td>' +
-          '<td' + (it.suspended ? ' style="text-decoration:line-through"' : '') + '>' + esc(it.filename) + '</td>' +
-          '<td>' + it.type + '</td><td>' + fmt + '</td>' +
-          '<td>' + plOri + '</td><td>' + durCell + '</td><td>' + horCell + '</td>' +
-          '<td><button class="ghost sus-btn">' + (it.suspended ? 'Retomar' : 'Suspender') + '</button> ' +
-          '<button class="danger del-btn">Remover</button></td>';
-        tb.appendChild(tr);
-
-        tr.querySelector('.sched-btn').onclick = function (e) { e.preventDefault(); openSchedEditor(it); };
-
-        var di = tr.querySelector('.durInput');
+        tile.querySelector('.pli-sched').onclick = function () { openSchedEditor(it); };
+        var di = tile.querySelector('.pliDur');
         if (di) di.onchange = function () {
-          var v = Number(this.value);
-          jpost('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { duration: v }, 'PATCH')
-            .then(function (r) { log('item ' + it.id + ' dur=' + v + ', v' + r.version); loadPlaylists(); })
+          jpost('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { duration: Number(this.value) }, 'PATCH')
+            .then(function () { loadPlaylistItems(); loadPlaylists(); })
             .catch(function (e) { log('duração: ' + e.message); loadPlaylistItems(); });
         };
-
-        tr.querySelector('.sus-btn').onclick = function () {
+        tile.querySelector('.pli-susp').onclick = function () {
           jpost('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { suspended: !it.suspended }, 'PATCH')
-            .then(function (r) { log('item ' + it.id + (it.suspended ? ' retomado' : ' suspenso') + ', v' + r.version);
-              loadPlaylistItems(); loadPlaylists(); })
-            .catch(function (e) { log('suspender: ' + e.message); });
+            .then(function () { loadPlaylistItems(); loadPlaylists(); }).catch(function (e) { log(e.message); });
         };
-
-        tr.querySelector('.del-btn').onclick = function () {
+        tile.querySelector('.pli-del').onclick = function () {
           api('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { method: 'DELETE' })
-            .then(function (r) { log('item removido, v' + r.version); loadPlaylistItems(); loadPlaylists(); });
+            .then(function () { log('item removido'); loadPlaylistItems(); loadPlaylists(); }).catch(function (e) { log(e.message); });
         };
       });
-      $('plVersion').textContent = 'playlist "' + d.playlist.name + '" — versao ' + d.playlist.version +
-        ' — ' + d.items.length + ' item(s)';
 
       if (sortable) sortable.destroy();
-      sortable = window.Sortable && window.Sortable.create(tb, {
-        handle: '.drag', animation: 120, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen',
+      sortable = window.Sortable && window.Sortable.create(grid, {
+        animation: 120, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', draggable: '.pli',
         onEnd: function () {
-          var ids = Array.prototype.map.call(tb.querySelectorAll('tr'), function (r) {
-            return Number(r.getAttribute('data-item'));
-          });
+          var ids = Array.prototype.map.call(grid.querySelectorAll('.pli'), function (r) { return Number(r.getAttribute('data-item')); });
           jpost('/api/playlists/' + state.activePlaylist + '/order', { item_ids: ids }, 'PUT')
-            .then(function (r) { log('reordenado, v' + r.version); loadPlaylistItems(); loadPlaylists(); })
+            .then(function () { loadPlaylistItems(); loadPlaylists(); })
             .catch(function (e) { log('ordenar: ' + e.message); loadPlaylistItems(); });
         },
       });
     });
   }
+
+  // ---- caixa "adicionar conteudo" ----
+  var _plAddFolder = '', _plAddMarked = [], _plAddSel = [], _plAddSelPick = null;
+  function plAddAssetsHere() {
+    var fid = _plAddFolder === '' ? null : Number(_plAddFolder);
+    return (state.assets || []).filter(function (a) { return (a.folder_id || null) === fid; });
+  }
+  function openPlAdd() {
+    _plAddMarked = []; _plAddSel = []; _plAddSelPick = null;
+    $('plAddModal').classList.remove('hidden');
+    loadAssets().then(function () { renderPlAddNav(); renderPlAddGrid(); renderPlAddSel(); });
+  }
+  $('plAddClose').onclick = function () { $('plAddModal').classList.add('hidden'); };
+
+  function renderPlAddNav() {
+    var by = {}; (state.folders || []).forEach(function (f) { by[f.id] = f; });
+    var crumbs = [{ id: '', name: 'Repositório' }];
+    if (_plAddFolder !== '') {
+      var chain = [], c = by[_plAddFolder];
+      while (c) { chain.unshift(c); c = by[c.parent_id]; }
+      chain.forEach(function (f) { crumbs.push({ id: String(f.id), name: f.name }); });
+    }
+    $('plAddCrumb').innerHTML = crumbs.map(function (cr, i) {
+      return (i ? ' <span class="muted">/</span> ' : '') +
+        '<a href="#" data-f="' + cr.id + '" style="color:var(--acc)">' + esc(cr.name) + '</a>';
+    }).join('');
+    Array.prototype.forEach.call($('plAddCrumb').querySelectorAll('a'), function (a) {
+      a.onclick = function (e) {
+        e.preventDefault(); _plAddFolder = a.getAttribute('data-f'); _plAddMarked = [];
+        renderPlAddNav(); renderPlAddGrid();
+      };
+    });
+    var pid = _plAddFolder === '' ? null : Number(_plAddFolder);
+    var kids = folderChildren(pid);
+    $('plAddSubfolders').innerHTML = kids.map(function (f) {
+      return '<button data-f="' + f.id + '" style="border:1px solid var(--line);background:#0d141c;color:var(--fg);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">📁 ' + esc(f.name) + '</button>';
+    }).join('') || '<span class="muted" style="font-size:12px">sem subpastas aqui</span>';
+    Array.prototype.forEach.call($('plAddSubfolders').querySelectorAll('button'), function (b) {
+      b.onclick = function () { _plAddFolder = b.getAttribute('data-f'); _plAddMarked = []; renderPlAddNav(); renderPlAddGrid(); };
+    });
+  }
+  function renderPlAddGrid() {
+    var g = $('plAddGrid'); g.innerHTML = '';
+    var here = plAddAssetsHere();
+    if (!here.length) { g.innerHTML = '<p class="muted" style="font-size:12px">Nenhum arquivo nesta pasta.</p>'; return; }
+    here.forEach(function (a) {
+      var inSel = _plAddSel.indexOf(a.id) >= 0;
+      var t = document.createElement('div');
+      t.className = 'atile' + (_plAddMarked.indexOf(a.id) >= 0 ? ' sel' : '');
+      if (inSel) t.style.opacity = '0.35';
+      t.innerHTML =
+        '<div class="thumb" data-glyph="' + assetGlyph(a.type) + '">' + thumbHtml(a) + '</div>' +
+        '<div class="aname" title="' + esc(a.filename) + '">' + esc(a.filename) + '</div>' +
+        '<div class="abadge"><span>' + esc(a.type) + '</span><span>' + fmtBytes(a.size_bytes) + '</span></div>';
+      t.onclick = function () {
+        if (inSel) return;
+        var i = _plAddMarked.indexOf(a.id);
+        if (i >= 0) _plAddMarked.splice(i, 1); else _plAddMarked.push(a.id);
+        renderPlAddGrid();
+      };
+      g.appendChild(t);
+    });
+  }
+  function renderPlAddSel() {
+    $('plAddSelN').textContent = _plAddSel.length;
+    var g = $('plAddSelGrid'); g.innerHTML = '';
+    if (!_plAddSel.length) { g.innerHTML = '<p class="muted" style="font-size:12px">Vazio. Marque arquivos e clique em "enviar para a seleção".</p>'; }
+    _plAddSel.forEach(function (aid) {
+      var a = (state.assets || []).find(function (x) { return x.id === aid; }); if (!a) return;
+      var t = document.createElement('div');
+      t.className = 'atile' + (_plAddSelPick === aid ? ' sel' : '');
+      t.innerHTML =
+        '<div class="thumb" data-glyph="' + assetGlyph(a.type) + '">' + thumbHtml(a) + '</div>' +
+        '<div class="aname" title="' + esc(a.filename) + '">' + esc(a.filename) + '</div>';
+      t.onclick = function () { _plAddSelPick = (_plAddSelPick === aid ? null : aid); renderPlAddSel(); };
+      g.appendChild(t);
+    });
+    $('plAddSendBack').disabled = _plAddSelPick == null;
+    $('plAddConfirm').disabled = !_plAddSel.length;
+  }
+  $('plAddSend').onclick = function () {
+    _plAddMarked.forEach(function (id) { if (_plAddSel.indexOf(id) < 0) _plAddSel.push(id); });
+    _plAddMarked = []; renderPlAddGrid(); renderPlAddSel();
+  };
+  $('plAddSendBack').onclick = function () {
+    if (_plAddSelPick == null) return;
+    var i = _plAddSel.indexOf(_plAddSelPick);
+    if (i >= 0) _plAddSel.splice(i, 1);
+    _plAddSelPick = null; renderPlAddGrid(); renderPlAddSel();
+  };
+  $('plAddConfirm').onclick = function () {
+    if (!_plAddSel.length || !state.activePlaylist) return;
+    var pid = state.activePlaylist, ids = _plAddSel.slice(), i = 0, ok = 0;
+    $('plAddConfirm').disabled = true;
+    (function next() {
+      if (i >= ids.length) {
+        log('adicionados ' + ok + '/' + ids.length + ' à playlist');
+        $('plAddModal').classList.add('hidden');
+        loadPlaylistItems(); loadPlaylists();
+        return;
+      }
+      var aid = ids[i++];
+      jpost('/api/playlists/' + pid + '/items', { asset_id: aid, duration: 10 })
+        .then(function () { ok++; }).catch(function (e) { log('add: ' + e.message); }).finally(next);
+    })();
+  };
 
   // ---- day-parting (M6) ----
   var DAY_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom']; // ISO 1..7
