@@ -6,8 +6,11 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.os.SystemClock
+import android.text.InputType
 import android.util.Log
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -19,13 +22,20 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.widget.doAfterTextChanged
 import com.a3k.player.cms.CmsCache
 import com.a3k.player.cms.Prefs
+import kotlin.system.exitProcess
 
 class PlayerActivity : AppCompatActivity() {
 
@@ -45,6 +55,10 @@ class PlayerActivity : AppCompatActivity() {
     private var cornerTaps = 0
     private var firstTapAt = 0L
 
+    // F1: overlay de senha para sair
+    private var stopOverlay: View? = null
+    private val stopTimeout = Runnable { dismissStopPrompt() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -52,6 +66,13 @@ class PlayerActivity : AppCompatActivity() {
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
             return
+        }
+
+        // Se chegou aqui e o player estava "parado" (F1), foi o operador que
+        // reabriu o app manualmente -> volta a operar normalmente.
+        if (Prefs.isStopped(this)) {
+            Prefs.setStopped(this, false)
+            Watchdog.arm(this)
         }
 
         requestedOrientation = Prefs.requestedOrientation(this)
@@ -198,15 +219,122 @@ class PlayerActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    // engole voltar/home/menu — nao deixa sair do player por acidente
+    // Teclado conectado. Enquanto o overlay de senha esta aberto, F1/F2 nao agem
+    // (as teclas vao para o campo). BACK/MENU sempre engolidos.
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && stopOverlay == null) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_F1 -> { showStopPrompt(); return true }
+                KeyEvent.KEYCODE_F2 -> { rotate90cw(); return true }
+            }
+        }
         return when (event.keyCode) {
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_MENU -> true
             else -> super.dispatchKeyEvent(event)
         }
     }
 
+    private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
+
+    /** F2: gira a tela 90° no sentido horario a cada toque. */
+    private fun rotate90cw() {
+        val cur = Prefs.manualRotation(this).let { if (it in 0..3) it else 0 }
+        Prefs.setManualRotation(this, cur + 1)
+        requestedOrientation = Prefs.requestedOrientation(this)
+        Toast.makeText(this, "Tela girada", Toast.LENGTH_SHORT).show()
+    }
+
+    /** F1: pede a senha; ok -> fecha o app. 15s sem acao -> some e segue tocando. */
+    private fun showStopPrompt() {
+        if (stopOverlay != null) return
+        val ctx = this
+
+        val root = FrameLayout(ctx).apply {
+            setBackgroundColor(0xCC000000.toInt())
+            isClickable = true
+            isFocusableInTouchMode = true
+        }
+        val card = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xFF111A24.toInt())
+            setPadding(dp(28), dp(24), dp(28), dp(20))
+            layoutParams = FrameLayout.LayoutParams(dp(320), FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER
+            }
+        }
+        val title = TextView(ctx).apply {
+            text = "Senha para sair do player"
+            setTextColor(0xFFFFFFFF.toInt()); textSize = 16f
+        }
+        val input = EditText(ctx).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            hint = "senha"
+            setTextColor(0xFFFFFFFF.toInt()); setHintTextColor(0xFF6B7D8F.toInt())
+        }
+        val err = TextView(ctx).apply {
+            setTextColor(0xFFE8776B.toInt()); textSize = 12f; visibility = View.GONE
+        }
+        val rowBtns = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            setPadding(0, dp(12), 0, 0)
+        }
+        val cancel = Button(ctx).apply { text = "Cancelar" }
+        val ok = Button(ctx).apply { text = "OK" }
+        rowBtns.addView(cancel)
+        rowBtns.addView(ok)
+
+        card.addView(title)
+        card.addView(input)
+        card.addView(err)
+        card.addView(rowBtns)
+        root.addView(card)
+
+        fun resetTimer() {
+            ui.removeCallbacks(stopTimeout)
+            ui.postDelayed(stopTimeout, 15_000)
+        }
+        input.doAfterTextChanged { resetTimer() }
+        root.setOnKeyListener { _, _, _ -> resetTimer(); false }
+        cancel.setOnClickListener { dismissStopPrompt() }
+        ok.setOnClickListener {
+            if (input.text.toString() == STOP_PASSWORD) {
+                stopPlayer()
+            } else {
+                err.text = "Senha incorreta"
+                err.visibility = View.VISIBLE
+                input.setText("")
+                resetTimer()
+            }
+        }
+
+        container.addView(root)
+        stopOverlay = root
+        input.requestFocus()
+        resetTimer()
+    }
+
+    private fun dismissStopPrompt() {
+        ui.removeCallbacks(stopTimeout)
+        stopOverlay?.let { container.removeView(it) }
+        stopOverlay = null
+        webView?.requestFocus()
+    }
+
+    private fun stopPlayer() {
+        Prefs.setStopped(this, true)
+        Watchdog.disarm(this)
+        dismissStopPrompt()
+        finishAndRemoveTask()
+        // encerra o processo pra nao sobrar nada segurando a tela
+        ui.postDelayed({
+            Process.killProcess(Process.myPid())
+            exitProcess(0)
+        }, 200)
+    }
+
     companion object {
         private const val TAG = "A3K/Player"
+        private const val STOP_PASSWORD = "102030"
     }
 }

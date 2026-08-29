@@ -50,7 +50,7 @@ object Watchdog {
 
     class Receiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent?) {
-            if (!Prefs.isConfigured(context)) return
+            if (!Prefs.isConfigured(context) || Prefs.isStopped(context)) return
             val age = SystemClock.elapsedRealtime() - lastAlive
             val stale = lastAlive == 0L || age > STALE_MS
             Log.i(TAG, "check: lastAlive=${lastAlive} age=${age}ms stale=$stale")

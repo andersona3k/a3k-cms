@@ -17,12 +17,12 @@ class App : Application() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, ex ->
             Log.e(TAG, "crash nao tratado em ${thread.name}", ex)
-            if (Prefs.isConfigured(this)) scheduleRestart(2_000)
+            if (Prefs.isConfigured(this) && !Prefs.isStopped(this)) scheduleRestart(2_000)
             previous?.uncaughtException(thread, ex)
             exitProcess(2)
         }
 
-        if (Prefs.isConfigured(this)) {
+        if (Prefs.isConfigured(this) && !Prefs.isStopped(this)) {
             Watchdog.arm(this)
         }
     }

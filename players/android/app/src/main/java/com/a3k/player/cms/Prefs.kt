@@ -10,6 +10,8 @@ object Prefs {
     private const val K_URL = "cms_url"
     private const val K_CODE = "pair_code"
     private const val K_ORIENT = "orientation" // "landscape" | "portrait" | "auto"
+    private const val K_MANUAL_ROT = "manual_rot" // -1 = usa K_ORIENT; 0..3 = passos de 90° horario (F2)
+    private const val K_STOPPED = "stopped"        // true = F1 parou o player; nao relancar
 
     private fun sp(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -35,10 +37,33 @@ object Prefs {
         sp(c).edit().remove(K_CODE).apply()
     }
 
-    fun requestedOrientation(c: Context): Int = when (orientation(c)) {
-        "portrait" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-        "auto" -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
-        else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    /** F2: rotacao manual em passos de 90° horario. -1 = sem override (usa K_ORIENT). */
+    fun manualRotation(c: Context): Int = sp(c).getInt(K_MANUAL_ROT, -1)
+
+    fun setManualRotation(c: Context, steps: Int) {
+        sp(c).edit().putInt(K_MANUAL_ROT, ((steps % 4) + 4) % 4).apply()
+    }
+
+    /** F1: player parado pelo operador. BootReceiver/Watchdog nao devem relancar. */
+    fun isStopped(c: Context): Boolean = sp(c).getBoolean(K_STOPPED, false)
+
+    fun setStopped(c: Context, stopped: Boolean) {
+        sp(c).edit().putBoolean(K_STOPPED, stopped).apply()
+    }
+
+    fun requestedOrientation(c: Context): Int {
+        val m = manualRotation(c)
+        if (m in 0..3) return when (m) {
+            1 -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            2 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+            3 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+            else -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+        return when (orientation(c)) {
+            "portrait" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            "auto" -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
     }
 
     /**

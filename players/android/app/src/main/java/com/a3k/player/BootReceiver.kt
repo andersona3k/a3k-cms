@@ -13,6 +13,7 @@ class BootReceiver : BroadcastReceiver() {
         val action = intent?.action ?: return
         Log.i(TAG, "boot: $action")
         if (!Prefs.isConfigured(context)) return
+        if (Prefs.isStopped(context)) { Log.i(TAG, "player parado pelo operador (F1) — nao inicia"); return }
 
         Watchdog.arm(context)
 

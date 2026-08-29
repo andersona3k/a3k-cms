@@ -60,8 +60,17 @@ Depois disso o app sobe sozinho a cada boot.
 
 - **Reconfigurar**: no player, toque **7 vezes no canto superior esquerdo**
   (dentro de 3s) para abrir a tela de Configuração.
-- **Sair do app**: botões Voltar/Menu são ignorados de propósito. Use o gesto
-  acima e depois o botão Home do sistema, ou desinstale.
+- **Teclado conectado** (USB/BT):
+  - **F1** — parar o player. Abre um campo de senha; com `102030` + OK o app
+    fecha (`Prefs.stopped=true`; BootReceiver e Watchdog param de relançar).
+    Sem ação em **15s** o campo some e a operação continua. Reabrir o app pelo
+    ícone limpa o `stopped` e volta a operar.
+  - **F2** — gira a tela **90° horário** a cada toque (`Prefs.manualRotation`
+    0..3, aplicado em `requestedOrientation`; persiste). Sobrepõe a orientação
+    escolhida no Setup até voltar ao Setup e salvar.
+  - F3+ — a definir.
+- **Sair do app**: botões Voltar/Menu são ignorados de propósito. Use F1 (com
+  senha), ou o gesto dos 7 toques + Home, ou desinstale.
 - **Autostart em alguns fabricantes** (Xiaomi/Redmi, alguns boxes) exige
   habilitar "iniciar automaticamente" / "autostart" nas configurações do
   aparelho para o app.
