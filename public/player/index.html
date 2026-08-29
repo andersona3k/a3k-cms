@@ -63,7 +63,7 @@
 (function () {
   'use strict';
 
-  var PLAYER_VERSION = '2026-08-29.1';
+  var PLAYER_VERSION = '2026-08-29.2';
   var API = location.origin;
   var POLL_MS = 15000;
   var HEARTBEAT_MS = 60000;
@@ -196,13 +196,29 @@
   function cacheKey(it) { return it.hash || it.url; }
 
   // Baixa tudo que falta e apaga o que saiu da playlist.
+  function fetchWithTimeout(url, ms) {
+    if (typeof AbortController === 'undefined') return fetch(url);
+    var ac = new AbortController();
+    var t = setTimeout(function () { ac.abort(); }, ms || 60000);
+    return fetch(url, { signal: ac.signal }).then(function (r) { clearTimeout(t); return r; },
+      function (e) { clearTimeout(t); throw e; });
+  }
+
   function syncMedia(items) {
     var list = (items || []).filter(function (it) { return it && it.url; });
     var keep = {};
     list.forEach(function (it) { keep[cacheKey(it)] = 1; });
-    var i = 0;
+    // baixa a partir do PRÓXIMO a tocar (o que está no ar agora está streamando)
+    if (playlist.length) {
+      var order = [];
+      for (var o = 0; o < playlist.length; o++) order.push(playlist[(idx + 1 + o) % playlist.length]);
+      list.forEach(function (it) { if (order.indexOf(it) < 0) order.push(it); });
+      list = order.filter(function (it) { return it && it.url; });
+    }
+    var i = 0, retried = false, failed = [];
     function step() {
       if (i >= list.length) {
+        if (!retried && failed.length) { retried = true; list = failed.slice(); failed = []; i = 0; return step(); }
         dlMsg = ''; paintBadge();
         return mediaKeys().then(function (all) {
           return Promise.all((all || [])
@@ -215,12 +231,12 @@
         if (hit && hit.blob) return step();
         dlMsg = 'baixando ' + i + '/' + list.length;
         paintBadge();
-        return fetch(API + it.url).then(function (r) {
+        return fetchWithTimeout(API + it.url, 90000).then(function (r) {
           if (!r.ok) throw new Error('dl ' + r.status);
           return r.blob();
         }).then(function (blob) {
           return mediaPut(k, { blob: blob, mime: it.mime || blob.type, url: it.url, at: Date.now() });
-        }).then(step, function () { return step(); });   // erro num item: segue os demais
+        }).then(step, function () { failed.push(it); return step(); });
       }, function () { return step(); });
     }
     return Promise.resolve().then(step);
@@ -501,6 +517,7 @@
   }
 
   var renderSeq = 0;
+  var _renderFails = 0;   // itens seguidos que não conseguiram tocar
 
   function render() {
     clearTimeout(advanceTimer);
@@ -509,6 +526,7 @@
     var item = playlist[idx];
     var dur = (item.duration || 10) * 1000;
     var loop = playlist.length === 1;
+    var stallChk = null;
 
     applyOrient(
       stage,
@@ -521,7 +539,25 @@
     function reveal() {
       if (revealed || mySeq !== renderSeq) return;
       revealed = true;
+      _renderFails = 0;
+      clearInterval(stallChk);
       cover.classList.remove('on');
+    }
+
+    // item não conseguiu aparecer (rede/decodificação): pula pro próximo.
+    // Se deu a volta inteira sem nada tocar -> mostra "sem conexão" e re-tenta.
+    function fail(reason) {
+      if (mySeq !== renderSeq) return;
+      clearInterval(stallChk);
+      clearTimeout(advanceTimer);
+      _renderFails++;
+      if (_renderFails >= playlist.length) {
+        _renderFails = 0;
+        idle('Sem conexão — tentando de novo…');
+        advanceTimer = setTimeout(function () { if (playlist.length) render(); }, 8000);
+        return;
+      }
+      advanceTimer = setTimeout(next, 1200);
     }
 
     if (item.type === 'video') {
@@ -531,7 +567,7 @@
       v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
       v.loop = loop;
       if (!loop) v.onended = next;
-      v.onerror = function () { clearTimeout(advanceTimer); reveal(); advanceTimer = setTimeout(next, 3000); };
+      v.onerror = function () { fail('erro no vídeo'); };
       v.oncanplay = function () { v.play().catch(function () {}); };
       v.addEventListener('playing', reveal, { once: true });
       v.onloadedmetadata = function () {
@@ -549,24 +585,25 @@
         v.src = url;
         v.play().catch(function () {});
       });
-      setTimeout(reveal, 2500);
+      // watchdog: 8s sem começar a tocar (readyState<3) -> considera travado
+      var stallSecs = 0;
+      stallChk = setInterval(function () {
+        if (mySeq !== renderSeq || revealed) { clearInterval(stallChk); return; }
+        stallSecs++;
+        if (stallSecs >= 8 && v.readyState < 3) fail('vídeo travado (rede?)');
+      }, 1000);
       if (!loop) advanceTimer = setTimeout(next, Math.max(dur, 20000));
     } else if (item.type === 'image' || item.type === 'other' || item.type === 'html') {
       var img = document.createElement('img');
-      var imgFail = function () {
-        if (mySeq !== renderSeq) return;
-        reveal(); clearTimeout(advanceTimer);
-        advanceTimer = setTimeout(next, 2000);
-      };
       img.onload = function () {
-        if (!img.naturalWidth) return imgFail();
+        if (!img.naturalWidth) return fail('imagem sem dados');
         reveal(); preloadNext();
       };
-      img.onerror = imgFail;
+      img.onerror = function () { fail('erro na imagem'); };
       clearStage();
       stage.appendChild(img);
       srcFor(item).then(function (url) { if (mySeq === renderSeq) img.src = url; });
-      setTimeout(reveal, 1500);
+      setTimeout(function () { if (mySeq === renderSeq && !revealed) fail('imagem travada'); }, 8000);
       advanceTimer = setTimeout(next, dur);
     } else {
       clearStage();
