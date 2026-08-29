@@ -127,6 +127,8 @@ router.get('/', (req, res) => {
               (SELECT COUNT(*) FROM playlist_items WHERE playlist_id = p.id) AS item_count,
               (SELECT COALESCE(SUM(duration), 0) FROM playlist_items
                  WHERE playlist_id = p.id AND suspended = 0) AS total_duration,
+              (SELECT COALESCE(SUM(a.size_bytes), 0) FROM assets a
+                WHERE a.id IN (SELECT DISTINCT asset_id FROM playlist_items WHERE playlist_id = p.id)) AS total_bytes,
               EXISTS (SELECT 1 FROM assignments a
                        WHERE a.company_id = p.company_id AND a.playlist_id = p.id) AS assigned
          FROM playlists p
@@ -180,9 +182,16 @@ router.patch('/:id', (req, res) => {
 
   const b = req.body || {};
   const name = (b.name || '').trim();
-  if (name) {
-    db.prepare(`UPDATE playlists SET name = ?, updated_at = datetime('now') WHERE id = ?`)
-      .run(name, playlist.id);
+  if (name && name !== playlist.name) {
+    try {
+      db.prepare(`UPDATE playlists SET name = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(name, playlist.id);
+    } catch (err) {
+      if (String(err.message).includes('UNIQUE')) {
+        return res.status(409).json({ error: 'ja existe playlist com esse nome' });
+      }
+      throw err;
+    }
   }
   const rot = parseRotation(b.rotation);
   if (rot.error) return res.status(400).json({ error: rot.error });

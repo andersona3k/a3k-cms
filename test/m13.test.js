@@ -133,8 +133,15 @@ test('POST playlist: folder_id + created_by; GET calcula tipo/duracao/status', a
   const row = (await req('GET', '/api/playlists')).body.playlists.find((x) => x.id === pl.id);
   assert.equal(row.content_type, 'mix');            // imagem + video
   assert.ok(row.total_duration >= 8 && row.total_duration <= 12, 'soma ~7 + ~2s do video');
+  assert.ok(row.total_bytes > 0, 'soma o size_bytes dos assets distintos');
   assert.equal(row.status, 'planejada');            // sem assignment, sem vigencia
   assert.equal(row.assigned, false);
+
+  // renomear via PATCH; colisao de nome -> 409
+  assert.equal((await req('PATCH', `/api/playlists/${pl.id}`, { json: { name: 'Mix1 renomeada' } })).status, 200);
+  assert.equal((await req('GET', `/api/playlists/${pl.id}`)).body.playlist.name, 'Mix1 renomeada');
+  await req('POST', '/api/playlists', { json: { name: 'Outra' } });
+  assert.equal((await req('PATCH', `/api/playlists/${pl.id}`, { json: { name: 'Outra' } })).status, 409);
 
   // so imagem -> 'imagem'
   const pl2 = (await req('POST', '/api/playlists', { json: { name: 'ImgOnly' } })).body.playlist;

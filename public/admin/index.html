@@ -256,7 +256,7 @@
             <input type="checkbox" id="plShowArchived" style="width:auto"> arquivadas</label>
         </div>
         <table id="plListTbl"><thead><tr>
-          <th>Nome</th><th>Tipo</th><th>Orientação</th><th>Duração</th><th>Criada</th><th>Por</th>
+          <th>Nome</th><th>Tipo</th><th>Orientação</th><th>Duração</th><th>Tamanho</th><th>Criada</th><th>Por</th>
           <th>Status</th><th>Vigência</th><th>Ações</th>
         </tr></thead><tbody id="plListBody"></tbody></table>
         <p class="muted" id="plListEmpty" style="display:none">Nenhuma playlist nesta pasta.</p>
@@ -1084,6 +1084,20 @@
     var m = Math.floor(sec / 60), s = sec % 60;
     return m + 'min' + (s ? ' ' + s + 's' : '');
   }
+  function fmtMB(bytes) {
+    var mb = (Number(bytes) || 0) / 1048576;
+    return (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB';
+  }
+  function renamePlaylist(p) {
+    var n = (prompt('Novo nome da playlist', p.name) || '').trim();
+    if (!n || n === p.name) return;
+    jpost('/api/playlists/' + p.id, { name: n }, 'PATCH')
+      .then(function () { log('playlist #' + p.id + ' renomeada p/ "' + n + '"'); return loadPlaylists(); })
+      .then(function () {
+        if (!$('plEditModal').classList.contains('hidden') && state.activePlaylist === p.id) openPlEdit(p.id);
+      })
+      .catch(function (e) { log('renomear: ' + (e.body && e.body.error || e.message)); });
+  }
   function plStatusLabel(s) { return { em_uso: 'Em uso', planejada: 'Planejada', vencida: 'Vencida' }[s] || s; }
   function vigenciaText(p) {
     if (!p.valid_from && !p.valid_until) return '<span class="muted">sem vigência</span>';
@@ -1116,6 +1130,7 @@
         '<td>' + tipoLabel(p.content_type) + '</td>' +
         '<td>' + oriLabel(p.rotation, p.mirror) + '</td>' +
         '<td>' + fmtDur(p.total_duration) + ' <span class="muted">(' + p.item_count + ')</span></td>' +
+        '<td class="muted">' + fmtMB(p.total_bytes) + '</td>' +
         '<td class="muted">' + esc(String(p.created_at || '').slice(0, 10)) + '</td>' +
         '<td class="muted">' + esc(p.created_by || '—') + '</td>' +
         '<td><span class="pstat ' + st + '">' + stLabel + '</span></td>' +
@@ -1131,14 +1146,16 @@
           .then(function (d) { log('playlist duplicada: "' + d.playlist.name + '"'); loadPlaylists(); })
           .catch(function (err) { log('duplicar: ' + err.message); });
       };
+      var ren = document.createElement('button'); ren.className = 'ghost'; ren.textContent = 'Renomear';
+      ren.onclick = function (e) { e.stopPropagation(); renamePlaylist(p); };
       var sus = document.createElement('button'); sus.className = 'ghost'; sus.textContent = p.suspended ? 'Retomar' : 'Suspender';
       sus.onclick = function (e) { e.stopPropagation(); patchPl(p.id, { suspended: !p.suspended }, p.suspended ? 'retomada' : 'suspensa'); };
       var arc = document.createElement('button'); arc.className = 'ghost'; arc.textContent = p.archived ? 'Desarquivar' : 'Arquivar';
       arc.onclick = function (e) { e.stopPropagation(); patchPl(p.id, { archived: !p.archived }, p.archived ? 'desarquivada' : 'arquivada'); };
       var rem = document.createElement('button'); rem.className = 'danger'; rem.textContent = 'Remover';
       rem.onclick = function (e) { e.stopPropagation(); removePl(p); };
-      acts.appendChild(dup); acts.appendChild(sus); acts.appendChild(arc); acts.appendChild(rem);
-      tr.children[8].appendChild(acts);
+      acts.appendChild(dup); acts.appendChild(ren); acts.appendChild(sus); acts.appendChild(arc); acts.appendChild(rem);
+      tr.children[9].appendChild(acts);
       tb.appendChild(tr);
     });
     $('plListEmpty').style.display = here.length ? 'none' : 'block';
@@ -1162,8 +1179,10 @@
   // ---- modal de edicao da playlist ----
   function openPlEdit(id) {
     state.activePlaylist = id;
-    var p = (state.playlists || []).find(function (x) { return x.id === id; }) || { name: '#' + id };
-    $('plEditName').textContent = p.name + (p.version ? ' — v' + p.version : '');
+    var p = (state.playlists || []).find(function (x) { return x.id === id; }) || { id: id, name: '#' + id };
+    $('plEditName').innerHTML = esc(p.name) + (p.version ? ' <span class="muted">— v' + p.version + '</span>' : '') +
+      ' <button class="ghost" id="plRenameBtn" style="padding:2px 8px;font-size:11px">✎ renomear</button>';
+    $('plRenameBtn').onclick = function () { renamePlaylist(p); };
     $('plRotation').value = oriValue(p);
     var fsel = $('plEditFolder');
     fsel.innerHTML = '<option value="">(sem pasta)</option>' + (state.plFolders || []).map(function (f) {

@@ -290,9 +290,10 @@ public/
                        playlist_folders ("Projeto" garantida na raiz; ate 3
                        niveis; pasta AZUL = tem playlist, VERDE = tem playlist no
                        ar, CINZA = vazia) + tabela (Nome · Tipo Video/Imagem/Mix ·
-                       Orientacao · Duracao total · Criada · Por · Status Em uso/
-                       Planejada/Vencida · Vigencia · Acoes Suspender/Arquivar/
-                       Duplicar/Remover). Clicar na linha abre #plEditModal
+                       Orientacao · Duracao total · Tamanho (MB, soma dos assets
+                       distintos) · Criada · Por · Status Em uso/Planejada/Vencida ·
+                       Vigencia · Acoes Duplicar/Renomear/Suspender/Arquivar/
+                       Remover). Clicar na linha abre #plEditModal
                        (a tela de edicao de antes). Arrasta a linha e solta numa
                        pasta da arvore -> muda folder_id. Raiz "Projeto" nao pode
                        ser apagada (so renomear / criar subpasta); "(sem pasta)"
@@ -315,7 +316,8 @@ por plataforma. Sem toolchain nativo. `FFPROBE_PATH` no `.env` sobrescreve.
 `valid_from`/`valid_until` [YYYY-MM-DD], `suspended`, `archived`),
 `playlist_folders` (arvore, 011), `playlist_items` (com `schedule` JSON de day-parting, M6).
 `GET /api/playlists` calcula `content_type` (video/imagem/mix), `total_duration`,
-`assigned` e `status` (vencida/em_uso/planejada). Playlist `suspended` -> manifest
+`total_bytes` (soma dos `size_bytes` dos assets distintos), `assigned` e `status`
+(vencida/em_uso/planejada). `PATCH { name }` renomeia (409 em colisao). Playlist `suspended` -> manifest
 sai vazio (bumpa version); `archived` some da lista (a menos de `?include_archived=true`).
 `POST /api/playlists/:id/duplicate` copia nome+" (copia)", pasta, orientacao,
 vigencia e itens (nao os assignments). `DELETE /api/playlist-folders/:id` recusa a
