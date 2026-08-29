@@ -113,6 +113,10 @@ router.delete('/:id', (req, res) => {
   const folder = scoped(db, req.params.id, req.auth.companyId);
   if (!folder) return res.status(404).json({ error: 'pasta nao encontrada' });
 
+  if (folder.parent_id == null && folder.name === 'Projeto') {
+    return res.status(400).json({ error: 'a pasta raiz "Projeto" nao pode ser apagada' });
+  }
+
   const subs = db.prepare('SELECT COUNT(*) n FROM playlist_folders WHERE parent_id = ?').get(folder.id).n;
   const pls = db.prepare('SELECT COUNT(*) n FROM playlists WHERE folder_id = ?').get(folder.id).n;
   const force = req.query.force === 'true' || req.query.force === '1';

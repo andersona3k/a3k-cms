@@ -148,8 +148,9 @@
   #plWrap { display:grid; grid-template-columns:240px 1fr; gap:16px; align-items:start; }
   @media (max-width:900px) { #plWrap { grid-template-columns:1fr; } #plTree { position:static; } }
   #plListTbl td, #plListTbl th { font-size:12px; }
-  #plListTbl tbody tr { cursor:pointer; }
+  #plListTbl tbody tr { cursor:grab; }
   #plListTbl tbody tr:hover { background:#1b2733; }
+  #plTree .fnode.dragover { outline:2px dashed var(--acc); outline-offset:-2px; background:#1b2c3f; }
   #plListTbl .rowacts { display:flex; gap:5px; flex-wrap:wrap; }
   #plListTbl .rowacts button { padding:4px 8px; font-size:11px; }
   .pstat { font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; white-space:nowrap; }
@@ -422,7 +423,7 @@
   var token = localStorage.getItem('a3k_admin_token') || '';
   var state = { assets: [], playlists: [], folders: [], groups: [], roles: [], me: null,
     companyCtx: '', activePlaylist: null, currentFolder: '', selectedAsset: null,
-    plFolders: [], plCurrentFolder: '' };
+    plFolders: [], plCurrentFolder: null };
 
   var $ = function (id) { return document.getElementById(id); };
   function log(m) { $('log').textContent = '[' + new Date().toLocaleTimeString() + '] ' + m + '\n' + $('log').textContent; }
@@ -930,6 +931,31 @@
     if (!here.length) return 'f-gray';
     return here.some(function (p) { return p.assigned && !p.suspended; }) ? 'f-green' : 'f-blue';
   }
+  function projetoFolder() {
+    return (state.plFolders || []).find(function (f) { return !f.parent_id && f.name === 'Projeto'; }) || null;
+  }
+  function isProjetoRoot(f) { return f && f.parent_id == null && f.name === 'Projeto'; }
+
+  // arrasta uma playlist da lista e solta numa pasta da arvore -> muda folder_id
+  var _dragPlId = null;
+  function movePlaylistToFolder(plId, folderId) {
+    var p = (state.playlists || []).find(function (x) { return x.id === Number(plId); });
+    if (p && (p.folder_id || null) === (folderId || null)) return;
+    jpost('/api/playlists/' + plId, { folder_id: folderId || null }, 'PATCH')
+      .then(function () { log('playlist #' + plId + ' movida'); loadPlaylists(); })
+      .catch(function (e) { log('mover: ' + e.message); });
+  }
+  function wireDropTarget(el, folderId) {
+    el.addEventListener('dragover', function (e) {
+      if (_dragPlId == null) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move'; el.classList.add('dragover');
+    });
+    el.addEventListener('dragleave', function () { el.classList.remove('dragover'); });
+    el.addEventListener('drop', function (e) {
+      e.preventDefault(); el.classList.remove('dragover');
+      if (_dragPlId != null) movePlaylistToFolder(_dragPlId, folderId);
+    });
+  }
 
   function loadPlFolders() {
     return api('/api/playlist-folders').then(function (d) {
@@ -939,8 +965,11 @@
         _projetoTried = true;
         return jpost('/api/playlist-folders', { name: 'Projeto' }).then(loadPlFolders).catch(function () {});
       }
-      if (state.plCurrentFolder === '' ||
-          !state.plFolders.some(function (f) { return String(f.id) === String(state.plCurrentFolder); })) {
+      // null = ainda nao escolheu -> cai na raiz Projeto. '' = "(sem pasta)" (valido).
+      var chosen = state.plCurrentFolder;
+      var valid = chosen === '' ||
+        state.plFolders.some(function (f) { return String(f.id) === String(chosen); });
+      if (chosen == null || !valid) {
         var home = plFolderChildren(null)[0];
         state.plCurrentFolder = home ? String(home.id) : '';
       }
@@ -957,7 +986,21 @@
       var n = document.createElement('div');
       n.className = 'fnode ' + plFolderColor('') + (state.plCurrentFolder === '' ? ' sel' : '');
       n.innerHTML = '<span class="fname">🗂️ (sem pasta)</span><span class="fcount">' + unf + '</span>';
+      var toProj = document.createElement('button'); toProj.className = 'fbtn'; toProj.textContent = '→ Projeto';
+      toProj.title = 'mover todas para a pasta Projeto';
+      toProj.onclick = function (e) {
+        e.stopPropagation();
+        var proj = projetoFolder(); if (!proj) return;
+        if (!confirm('Mover as ' + unf + ' playlist(s) sem pasta para "Projeto"?')) return;
+        Promise.all(plsInFolder('').map(function (p) {
+          return jpost('/api/playlists/' + p.id, { folder_id: proj.id }, 'PATCH');
+        })).then(function () {
+          log(unf + ' playlist(s) movidas para Projeto'); state.plCurrentFolder = String(proj.id); loadPlaylists();
+        }).catch(function (err) { log('mover: ' + err.message); });
+      };
+      n.appendChild(toProj);
       n.onclick = function () { selectPlFolder(''); };
+      wireDropTarget(n, null);
       li.appendChild(n); root.appendChild(li);
     }
     $('plCrumb').innerHTML = state.plCurrentFolder === ''
@@ -977,10 +1020,14 @@
     }
     var rb = document.createElement('button'); rb.className = 'fbtn'; rb.textContent = '✎'; rb.title = 'renomear';
     rb.onclick = function (e) { e.stopPropagation(); renamePlFolder(f); };
-    var db2 = document.createElement('button'); db2.className = 'fbtn'; db2.textContent = '🗑'; db2.title = 'apagar';
-    db2.onclick = function (e) { e.stopPropagation(); deletePlFolder(f); };
-    n.appendChild(rb); n.appendChild(db2);
+    n.appendChild(rb);
+    if (!isProjetoRoot(f)) { // a raiz "Projeto" nao pode ser apagada
+      var db2 = document.createElement('button'); db2.className = 'fbtn'; db2.textContent = '🗑'; db2.title = 'apagar';
+      db2.onclick = function (e) { e.stopPropagation(); deletePlFolder(f); };
+      n.appendChild(db2);
+    }
     n.onclick = function () { selectPlFolder(String(f.id)); };
+    wireDropTarget(n, f.id);
     li.appendChild(n);
     var kids = plFolderChildren(f.id);
     if (kids.length) { var ul = document.createElement('ul'); kids.forEach(function (c) { ul.appendChild(plTreeNode(c)); }); li.appendChild(ul); }
@@ -1008,7 +1055,10 @@
           api('/api/playlist-folders/' + f.id + '?force=true', { method: 'DELETE' }).then(after).catch(function (e2) { log(e2.message); });
       } else log('apagar pasta: ' + e.message);
     });
-    function after() { if (String(state.plCurrentFolder) === String(f.id)) state.plCurrentFolder = ''; loadPlaylists(); }
+    function after() {
+      if (String(state.plCurrentFolder) === String(f.id)) state.plCurrentFolder = String((projetoFolder() || {}).id || '');
+      loadPlaylists();
+    }
   }
   $('plFolderBtn').onclick = function () {
     var cur = state.plCurrentFolder ? plFoldersBy()[state.plCurrentFolder] : null;
@@ -1018,7 +1068,9 @@
   $('plNewBtn').onclick = function () {
     var name = (prompt('Nome da nova playlist') || '').trim(); if (!name) return;
     var body = { name: name };
-    if (state.plCurrentFolder) body.folder_id = Number(state.plCurrentFolder);
+    // pasta atual; se estiver em "(sem pasta)" cria na raiz Projeto
+    var fid = state.plCurrentFolder ? Number(state.plCurrentFolder) : (projetoFolder() || {}).id;
+    if (fid) body.folder_id = fid;
     jpost('/api/playlists', body).then(function (d) {
       log('playlist #' + d.playlist.id + ' criada'); loadPlaylists().then(function () { openPlEdit(d.playlist.id); });
     }).catch(function (e) { log('playlist: ' + e.message); });
@@ -1048,6 +1100,14 @@
     });
     here.forEach(function (p) {
       var tr = document.createElement('tr');
+      tr.draggable = true;
+      tr.title = 'arraste para uma pasta ao lado';
+      tr.addEventListener('dragstart', function (e) {
+        _dragPlId = p.id; e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', 'pl:' + p.id); } catch (er) {}
+        tr.style.opacity = '0.5';
+      });
+      tr.addEventListener('dragend', function () { _dragPlId = null; tr.style.opacity = ''; });
       var st = p.archived ? 'arquivada' : p.status;
       var stLabel = p.archived ? 'Arquivada' : plStatusLabel(p.status);
       tr.innerHTML =
@@ -1064,13 +1124,20 @@
       tr.onclick = function () { openPlEdit(p.id); };
 
       var acts = document.createElement('div'); acts.className = 'rowacts';
+      var dup = document.createElement('button'); dup.className = 'ghost'; dup.textContent = 'Duplicar';
+      dup.onclick = function (e) {
+        e.stopPropagation();
+        api('/api/playlists/' + p.id + '/duplicate', { method: 'POST' })
+          .then(function (d) { log('playlist duplicada: "' + d.playlist.name + '"'); loadPlaylists(); })
+          .catch(function (err) { log('duplicar: ' + err.message); });
+      };
       var sus = document.createElement('button'); sus.className = 'ghost'; sus.textContent = p.suspended ? 'Retomar' : 'Suspender';
       sus.onclick = function (e) { e.stopPropagation(); patchPl(p.id, { suspended: !p.suspended }, p.suspended ? 'retomada' : 'suspensa'); };
       var arc = document.createElement('button'); arc.className = 'ghost'; arc.textContent = p.archived ? 'Desarquivar' : 'Arquivar';
       arc.onclick = function (e) { e.stopPropagation(); patchPl(p.id, { archived: !p.archived }, p.archived ? 'desarquivada' : 'arquivada'); };
       var rem = document.createElement('button'); rem.className = 'danger'; rem.textContent = 'Remover';
       rem.onclick = function (e) { e.stopPropagation(); removePl(p); };
-      acts.appendChild(sus); acts.appendChild(arc); acts.appendChild(rem);
+      acts.appendChild(dup); acts.appendChild(sus); acts.appendChild(arc); acts.appendChild(rem);
       tr.children[8].appendChild(acts);
       tb.appendChild(tr);
     });

@@ -255,6 +255,49 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true, removed_assignments: targets.length });
 });
 
+// POST /api/playlists/:id/duplicate  -> copia nome+" (copia)", pasta, orientacao,
+// vigencia e todos os itens. NAO copia assignments. version reinicia.
+router.post('/:id/duplicate', (req, res) => {
+  const db = getDb();
+  const src = getPlaylistScoped(db, req.params.id, req.auth.companyId);
+  if (!src) return res.status(404).json({ error: 'playlist nao encontrada' });
+
+  // acha um nome livre: "X (copia)", "X (copia 2)", ...
+  const base = `${src.name} (copia)`;
+  let name = base;
+  for (let i = 2; ; i++) {
+    const clash = db
+      .prepare('SELECT 1 FROM playlists WHERE company_id = ? AND name = ?')
+      .get(req.auth.companyId, name);
+    if (!clash) break;
+    name = `${base} ${i}`;
+  }
+
+  db.exec('BEGIN');
+  try {
+    const info = db
+      .prepare(
+        `INSERT INTO playlists (company_id, name, rotation, mirror, folder_id, created_by, valid_from, valid_until)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        req.auth.companyId, name, src.rotation, src.mirror, src.folder_id,
+        req.auth.email || null, src.valid_from, src.valid_until
+      );
+    const newId = Number(info.lastInsertRowid);
+    db.prepare(
+      `INSERT INTO playlist_items (playlist_id, asset_id, ordem, duration, schedule, rotation, mirror, suspended)
+       SELECT ?, asset_id, ordem, duration, schedule, rotation, mirror, suspended
+         FROM playlist_items WHERE playlist_id = ?`
+    ).run(newId, src.id);
+    db.exec('COMMIT');
+    res.status(201).json({ playlist: db.prepare('SELECT * FROM playlists WHERE id = ?').get(newId) });
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+});
+
 // POST /api/playlists/:id/items  { asset_id, duration?, ordem?, schedule?, rotation?, mirror?, suspended? }
 // Video: a duracao e SEMPRE a do arquivo (ignora `duration` do body).
 router.post('/:id/items', (req, res) => {

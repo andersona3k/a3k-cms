@@ -65,7 +65,7 @@ test.after(() => {
 });
 
 test('playlist-folders: CRUD + 409 se nao vazia', async () => {
-  const a = await req('POST', '/api/playlist-folders', { json: { name: 'Projeto' } });
+  const a = await req('POST', '/api/playlist-folders', { json: { name: 'Campanhas' } });
   assert.equal(a.status, 201);
   const sub = await req('POST', '/api/playlist-folders', { json: { name: 'Loja', parent_id: a.body.folder.id } });
   assert.equal(sub.status, 201);
@@ -79,6 +79,46 @@ test('playlist-folders: CRUD + 409 se nao vazia', async () => {
   assert.equal(force.status, 200);
   // subpasta caiu junto
   assert.equal((await req('GET', '/api/playlist-folders')).body.folders.length, 0);
+});
+
+test('playlist-folders: a raiz "Projeto" nao pode ser apagada', async () => {
+  const proj = (await req('POST', '/api/playlist-folders', { json: { name: 'Projeto' } })).body.folder;
+  assert.equal((await req('DELETE', `/api/playlist-folders/${proj.id}`)).status, 400);
+  assert.equal((await req('DELETE', `/api/playlist-folders/${proj.id}?force=true`)).status, 400);
+  // renomear e criar dentro dela continuam OK
+  assert.equal((await req('PATCH', `/api/playlist-folders/${proj.id}`, { json: { name: 'Projeto A' } })).status, 200);
+  await req('PATCH', `/api/playlist-folders/${proj.id}`, { json: { name: 'Projeto' } });
+  assert.equal((await req('POST', '/api/playlist-folders', { json: { name: 'Sub', parent_id: proj.id } })).status, 201);
+  // agora nao e mais raiz "Projeto"? ainda e; force ainda barra
+  await req('DELETE', `/api/playlist-folders/${proj.id}?force=true`);
+  assert.ok((await req('GET', '/api/playlist-folders')).body.folders.some((f) => f.name === 'Projeto'));
+});
+
+test('duplicar playlist copia itens/pasta/orientacao, nao os assignments', async () => {
+  const fold = (await req('POST', '/api/playlist-folders', { json: { name: 'Dup' } })).body.folder.id;
+  const pl = (await req('POST', '/api/playlists', { json: { name: 'Original', folder_id: fold, rotation: 90 } })).body.playlist;
+  await req('POST', `/api/playlists/${pl.id}/items`, { json: { asset_id: imgId, duration: 6 } });
+  await req('POST', `/api/playlists/${pl.id}/items`, { json: { asset_id: vidId } });
+  const pair = await req('POST', '/api/pair/new', { json: { hardware_id: 'hw-dup' } });
+  await req('POST', `/api/devices/${pair.body.deviceId}/assign`, { json: { playlist_id: pl.id } });
+
+  const d = await req('POST', `/api/playlists/${pl.id}/duplicate`);
+  assert.equal(d.status, 201);
+  const copy = d.body.playlist;
+  assert.equal(copy.name, 'Original (copia)');
+  assert.equal(copy.folder_id, fold);
+  assert.equal(copy.rotation, 90);
+  assert.notEqual(copy.id, pl.id);
+
+  const full = await req('GET', `/api/playlists/${copy.id}`);
+  assert.equal(full.body.items.length, 2);
+  // a copia NAO herda o assignment -> status planejada, nao em_uso
+  const row = (await req('GET', '/api/playlists')).body.playlists.find((x) => x.id === copy.id);
+  assert.equal(row.assigned, false);
+
+  // 2a duplicata -> "(copia) 2"
+  const d2 = await req('POST', `/api/playlists/${pl.id}/duplicate`);
+  assert.equal(d2.body.playlist.name, 'Original (copia) 2');
 });
 
 test('POST playlist: folder_id + created_by; GET calcula tipo/duracao/status', async () => {

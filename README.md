@@ -292,14 +292,16 @@ public/
                        ar, CINZA = vazia) + tabela (Nome · Tipo Video/Imagem/Mix ·
                        Orientacao · Duracao total · Criada · Por · Status Em uso/
                        Planejada/Vencida · Vigencia · Acoes Suspender/Arquivar/
-                       Remover). Clicar na linha abre #plEditModal (a tela de
-                       edicao de antes: orientacao, pasta, vigencia, add item,
-                       preview, tabela de itens com drag/horario/suspender).
+                       Duplicar/Remover). Clicar na linha abre #plEditModal
+                       (a tela de edicao de antes). Arrasta a linha e solta numa
+                       pasta da arvore -> muda folder_id. Raiz "Projeto" nao pode
+                       ser apagada (so renomear / criar subpasta); "(sem pasta)"
+                       tem botao "-> Projeto" que move tudo p/ a raiz.
 node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m13.test.js  testes de aceite (133 no total)
+  m0..m13.test.js  testes de aceite (135 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -315,6 +317,9 @@ por plataforma. Sem toolchain nativo. `FFPROBE_PATH` no `.env` sobrescreve.
 `GET /api/playlists` calcula `content_type` (video/imagem/mix), `total_duration`,
 `assigned` e `status` (vencida/em_uso/planejada). Playlist `suspended` -> manifest
 sai vazio (bumpa version); `archived` some da lista (a menos de `?include_archived=true`).
+`POST /api/playlists/:id/duplicate` copia nome+" (copia)", pasta, orientacao,
+vigencia e itens (nao os assignments). `DELETE /api/playlist-folders/:id` recusa a
+raiz "Projeto".
 `assets` ganhou `format`, `metadata` (dump cru do probe), `probe_status`
 (`pending`/`ok`/`error`/`skipped`) e `probe_error` no M2; `thumb_url` (migration
 009) = poster de video (`ffmpeg` extrai 1 frame no probe -> `media/<hash>.thumb.jpg`,
