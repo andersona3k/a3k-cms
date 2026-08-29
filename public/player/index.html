@@ -578,7 +578,27 @@
     render();
   }
 
-  var _commTimer = null, _commInterval = 60, _shotInterval = 30;
+  var _commTimer = null, _commInterval = 60, _shotInterval = 30, _shotTimer = null;
+
+  // retorno do nativo (window.A3K.captureUpload). cmdId numérico -> ack do comando.
+  window.__a3kShot = function (cmdId, json) {
+    var o = {}; try { o = JSON.parse(json); } catch (e) {}
+    if (cmdId && cmdId !== 'auto' && cmdId !== 'null') {
+      ackCommand(cmdId, !!o.ok, o.ok ? (o.url || 'capturado') : (o.error || 'falha'));
+    } else {
+      log('captura automática ' + (o.ok ? 'ok ' + (o.url || '') : 'falhou: ' + (o.error || '')));
+    }
+  };
+
+  function scheduleAutoShot() {
+    clearInterval(_shotTimer);
+    if (!device.token || !(window.A3K && window.A3K.captureUpload)) return;
+    _shotTimer = setInterval(function () {
+      try {
+        window.A3K.captureUpload('auto', API + '/api/devices/' + device.id + '/screenshots?source=auto', device.token);
+      } catch (e) {}
+    }, Math.max(1, _shotInterval) * 60000);
+  }
 
   function heartbeat() {
     if (!device.token) return;
@@ -592,7 +612,7 @@
     }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
       if (!d) return;
       if (d.comm_interval && d.comm_interval !== _commInterval) { _commInterval = d.comm_interval; scheduleCommLog(); }
-      if (d.screenshot_interval) _shotInterval = d.screenshot_interval;
+      if (d.screenshot_interval && d.screenshot_interval !== _shotInterval) { _shotInterval = d.screenshot_interval; scheduleAutoShot(); }
       if (Array.isArray(d.commands) && d.commands.length) d.commands.forEach(runCommand);
     }).catch(function () {});
   }
@@ -627,12 +647,8 @@
         } else { done(''); }
       } else if (c.type === 'screenshot') {
         if (window.A3K && window.A3K.captureUpload) {
-          // nativo faz captura + upload; devolve via window.__a3kShot(cmdId,jsonResult)
-          window.__a3kShot = function (cmdId, json) {
-            var o = {}; try { o = JSON.parse(json); } catch (e) {}
-            ackCommand(cmdId, !!o.ok, o.ok ? (o.url || 'capturado') : (o.error || 'falha'));
-          };
-          window.A3K.captureUpload(c.id, API + '/api/devices/' + device.id + '/screenshots?source=manual', device.token);
+          // nativo captura + faz upload; retorna via window.__a3kShot(cmdId, json)
+          window.A3K.captureUpload(String(c.id), API + '/api/devices/' + device.id + '/screenshots?source=manual', device.token);
         } else {
           ackCommand(c.id, false, 'captura só no player Android');
         }
@@ -702,6 +718,7 @@
         setInterval(heartbeat, HEARTBEAT_MS);
         setInterval(function () { recomputeActive(false); }, 20000);
         scheduleCommLog();
+        scheduleAutoShot();
         setTimeout(runCommLogCycle, 8000);   // um ciclo logo no início
         window.addEventListener('online', poll);
       })

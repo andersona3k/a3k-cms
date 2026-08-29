@@ -2,6 +2,8 @@ package com.a3k.player
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -12,8 +14,10 @@ import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.PixelCopy
 import android.view.View
 import android.view.WindowManager
+import android.webkit.JavascriptInterface
 import android.webkit.ConsoleMessage
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
@@ -141,6 +145,7 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         wv.setOnTouchListener { _, ev -> onCornerTap(ev); false }
+        wv.addJavascriptInterface(Bridge(), "A3K")
 
         container.addView(wv)
         webView = wv
@@ -369,6 +374,94 @@ class PlayerActivity : AppCompatActivity() {
         // recentes (a tela volta pro launcher). NADA de killProcess aqui — matar
         // o processo logo apos escrever prefs corrompe o arquivo.
         finishAndRemoveTask()
+    }
+
+    // ---- ponte JS p/ o player web (window.A3K) ----
+    inner class Bridge {
+        @JavascriptInterface
+        fun clearCache() {
+            ui.post {
+                runCatching { cache.clearAll() }.onFailure { Log.w(TAG, "cache.clear", it) }
+                webView?.clearCache(true)
+            }
+        }
+
+        @JavascriptInterface
+        fun captureUpload(cmdId: String?, url: String, token: String) {
+            ui.post { doCaptureUpload(cmdId, url, token) }
+        }
+    }
+
+    private fun shotCallback(cmdId: String?, ok: Boolean, detailOrBody: String) {
+        val urlMatch = if (ok) Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(detailOrBody)?.groupValues?.get(1) else null
+        val json = buildString {
+            append("{\"ok\":").append(ok)
+            if (urlMatch != null) append(",\"url\":\"").append(urlMatch).append("\"")
+            if (!ok) append(",\"error\":\"").append(detailOrBody.replace("\"", "'").replace("\n", " ").take(200)).append("\"")
+            append("}")
+        }
+        val idArg = if (cmdId.isNullOrEmpty() || cmdId == "null") "null" else "'$cmdId'"
+        webView?.evaluateJavascript("window.__a3kShot && window.__a3kShot($idArg, '$json')", null)
+    }
+
+    private fun doCaptureUpload(cmdId: String?, url: String, token: String) {
+        val w = window.decorView.width
+        val h = window.decorView.height
+        if (w <= 0 || h <= 0) { shotCallback(cmdId, false, "janela sem tamanho"); return }
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+
+        fun finishBitmap() {
+            Thread {
+                val r = runCatching {
+                    val baos = java.io.ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 70, baos)
+                    bmp.recycle()
+                    uploadJpeg(url, token, baos.toByteArray())
+                }
+                ui.post {
+                    r.onSuccess { shotCallback(cmdId, true, it) }
+                     .onFailure { shotCallback(cmdId, false, it.message ?: "upload falhou") }
+                }
+            }.start()
+        }
+
+        try {
+            // PixelCopy pega o surface real (inclui vídeo/GL), diferente de View.draw
+            PixelCopy.request(window, bmp, { result ->
+                if (result == PixelCopy.SUCCESS) finishBitmap()
+                else {
+                    // fallback: desenha a hierarquia de views (imagens ok, vídeo pode sair preto)
+                    runCatching { webView?.draw(Canvas(bmp)) }
+                    finishBitmap()
+                }
+            }, ui)
+        } catch (t: Throwable) {
+            runCatching { webView?.draw(Canvas(bmp)) }
+            finishBitmap()
+        }
+    }
+
+    private fun uploadJpeg(urlStr: String, token: String, jpeg: ByteArray): String {
+        val boundary = "----a3k${System.currentTimeMillis()}"
+        val conn = (java.net.URL(urlStr).openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 15000; readTimeout = 30000
+            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        }
+        conn.outputStream.use { os ->
+            os.write(("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"s.jpg\"\r\n" +
+                "Content-Type: image/jpeg\r\n\r\n").toByteArray())
+            os.write(jpeg)
+            os.write("\r\n--$boundary--\r\n".toByteArray())
+        }
+        val code = conn.responseCode
+        val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+            ?.bufferedReader()?.use { it.readText() } ?: ""
+        conn.disconnect()
+        if (code !in 200..299) throw RuntimeException("HTTP $code: ${body.take(160)}")
+        return body
     }
 
     companion object {
