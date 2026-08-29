@@ -193,13 +193,32 @@
   .pli .pliact button:hover { color:var(--fg); }
   .pli .pliact .pliDur { width:52px; font-size:11px; padding:2px 4px; }
 
-  .pladd-wrap { display:grid; grid-template-columns:1fr auto 1fr; gap:12px; align-items:start; margin-top:6px; }
-  .pladd-col { border:1px solid var(--line); border-radius:9px; padding:8px; background:#0b1219; }
-  .pladd-col-h { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
-  .pladd-mid { display:flex; flex-direction:column; gap:8px; padding-top:40px; }
-  .pladd-mid button { white-space:nowrap; font-size:12px; }
-  #plAddGrid .atile.sel, #plAddSelGrid .atile.sel { outline:2px solid var(--acc); outline-offset:-2px; }
-  @media (max-width:820px) { .pladd-wrap { grid-template-columns:1fr; } .pladd-mid { flex-direction:row; padding-top:0; } }
+  #plAddBox { width:96vw; max-width:96vw; height:94vh; max-height:94vh; display:flex; flex-direction:column; gap:10px; overflow:hidden; }
+  #plAddBody { flex:1; display:grid; grid-template-columns:230px minmax(0,1fr) 320px; gap:12px; min-height:0; }
+  #plAddBody > div { border:1px solid var(--line); border-radius:9px; padding:8px; background:#0b1219; overflow:auto; }
+  .pladd-col-h { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
+  .pladd-col-h button { padding:3px 9px; font-size:11px; }
+  #plAddCrumb a { color:var(--acc); text-decoration:none; }
+  .pladd-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; align-content:start; }
+  .pladd-grid-2 { grid-template-columns:repeat(2,1fr); }
+  .pladd-tile { border:1px solid var(--line); border-radius:7px; overflow:hidden; background:#0d141c; cursor:pointer; position:relative; }
+  .pladd-tile .t { height:56px; display:flex; align-items:center; justify-content:center; background:#000; font-size:20px; position:relative; }
+  .pladd-tile .t img { width:100%; height:100%; object-fit:cover; }
+  .pladd-tile .n { padding:3px 5px 4px; font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pladd-tile.sel { outline:2px solid var(--acc); outline-offset:-2px; }
+  .pladd-tile.dup { background:#3a3410; border-color:#e0a12f; }
+  .pladd-tile.dup .t::after { content:'⚠'; position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; font-size:24px; background:#0009; }
+  #plAddPlBar { border:1px solid var(--line); border-radius:9px; padding:8px; background:#0b1219; }
+  #plAddPlRow { display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; }
+  #plAddPlRow .pli-mini { flex:0 0 auto; width:96px; border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#0d141c; position:relative; }
+  #plAddPlRow .pli-mini .t { height:48px; display:flex; align-items:center; justify-content:center; background:#000; font-size:18px; }
+  #plAddPlRow .pli-mini .t img { width:100%; height:100%; object-fit:cover; }
+  #plAddPlRow .pli-mini .n { padding:2px 4px; font-size:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #plAddPlRow .pli-mini .num { position:absolute; top:2px; left:2px; background:var(--acc); color:#fff; font-size:9px;
+    font-weight:700; padding:0 4px; border-radius:4px; }
+  #plAddTree .fnode { padding:4px 6px; }
+  @media (max-width:900px) { #plAddBody { grid-template-columns:1fr; } }
   .assetgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:12px; }
   .atile { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#0d141c; cursor:grab; }
   .atile:hover { border-color:var(--acc); }
@@ -480,29 +499,37 @@
 </div>
 
 <div id="plAddModal" class="hidden">
-  <div class="modalBox" style="width:min(1000px,96vw);max-height:92vh;overflow:auto">
+  <div class="modalBox" id="plAddBox">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b>Adicionar conteúdo</b>
+      <b id="plAddTitle">Adicionar conteúdo</b>
       <button class="ghost" id="plAddClose">fechar</button>
     </div>
-    <div id="plAddCrumb" class="muted" style="font-size:12px;margin:8px 0"></div>
-    <div id="plAddSubfolders" class="modrow" style="margin-bottom:8px"></div>
-    <div class="pladd-wrap">
-      <div class="pladd-col">
-        <div class="pladd-col-h">Repositório</div>
-        <div id="plAddGrid" class="assetgrid" style="max-height:46vh;overflow:auto"></div>
+    <div id="plAddBody">
+      <div id="plAddTreeCol">
+        <div class="pladd-col-h">Pastas</div>
+        <ul class="ftree" id="plAddTree"></ul>
       </div>
-      <div class="pladd-mid">
-        <button id="plAddSend">enviar para a seleção →</button>
-        <button class="ghost" id="plAddSendBack">← remover</button>
+      <div id="plAddRepoCol">
+        <div class="pladd-col-h" style="display:flex;justify-content:space-between;align-items:center">
+          <span id="plAddCrumb"></span>
+          <button id="plAddSend">enviar para a seleção →</button>
+        </div>
+        <div id="plAddGrid" class="pladd-grid"></div>
       </div>
-      <div class="pladd-col">
-        <div class="pladd-col-h">Seleção (<span id="plAddSelN">0</span>)</div>
-        <div id="plAddSelGrid" class="assetgrid" style="max-height:46vh;overflow:auto"></div>
+      <div id="plAddSelCol">
+        <div class="pladd-col-h" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Seleção (<span id="plAddSelN">0</span>)</span>
+          <span>
+            <button class="ghost" id="plAddSendBack">← remover</button>
+            <button id="plAddConfirm">Adicionar à playlist</button>
+          </span>
+        </div>
+        <div id="plAddSelGrid" class="pladd-grid pladd-grid-2"></div>
       </div>
     </div>
-    <div class="row" style="justify-content:flex-end;margin-top:14px">
-      <button id="plAddConfirm">Adicionar à playlist</button>
+    <div id="plAddPlBar">
+      <div class="pladd-col-h">Playlist atual — <span id="plAddPlName">—</span></div>
+      <div id="plAddPlRow"></div>
     </div>
   </div>
 </div>
@@ -1476,20 +1503,61 @@
     });
   }
 
-  // ---- caixa "adicionar conteudo" ----
+  // ---- caixa "adicionar conteudo" (workspace: fica aberta ao adicionar) ----
   var _plAddFolder = '', _plAddMarked = [], _plAddSel = [], _plAddSelPick = null;
+  var _plAddPlItems = [];
+  function _plAddPlIds() { return _plAddPlItems.map(function (it) { return it.asset_id; }); }
+  function plAddIsDup(assetId) { return _plAddPlIds().indexOf(assetId) >= 0; }
   function plAddAssetsHere() {
     var fid = _plAddFolder === '' ? null : Number(_plAddFolder);
     return (state.assets || []).filter(function (a) { return (a.folder_id || null) === fid; });
   }
+  function plAddRefreshPl() {
+    if (!state.activePlaylist) { _plAddPlItems = []; return Promise.resolve(); }
+    return api('/api/playlists/' + state.activePlaylist).then(function (d) { _plAddPlItems = d.items || []; });
+  }
   function openPlAdd() {
     _plAddMarked = []; _plAddSel = []; _plAddSelPick = null;
     $('plAddModal').classList.remove('hidden');
-    loadAssets().then(function () { renderPlAddNav(); renderPlAddGrid(); renderPlAddSel(); });
+    var p = (state.playlists || []).find(function (x) { return x.id === state.activePlaylist; });
+    $('plAddPlName').textContent = (p && p.name) || ('#' + state.activePlaylist);
+    Promise.all([loadAssets(), plAddRefreshPl()]).then(function () {
+      renderPlAddTree(); renderPlAddCrumb(); renderPlAddGrid(); renderPlAddSel(); renderPlAddPlRow();
+    });
   }
   $('plAddClose').onclick = function () { $('plAddModal').classList.add('hidden'); };
 
-  function renderPlAddNav() {
+  function plAddMiniThumb(a) {
+    return a.type === 'image'
+      ? '<img src="' + API + a.url + '" alt="" loading="lazy" onerror="this.parentNode.textContent=this.parentNode.dataset.g">'
+      : (a.thumb_url ? '<img src="' + API + a.thumb_url + '" alt="" onerror="this.parentNode.textContent=this.parentNode.dataset.g">' : assetGlyph(a.type));
+  }
+  function renderPlAddTree() {
+    var root = $('plAddTree'); root.innerHTML = '';
+    var rootLi = document.createElement('li');
+    var rn = document.createElement('div');
+    rn.className = 'fnode' + (_plAddFolder === '' ? ' sel' : '');
+    rn.innerHTML = '<span class="fname">🗂️ Repositório</span>';
+    rn.onclick = function () { _plAddFolder = ''; _plAddMarked = []; renderPlAddTree(); renderPlAddCrumb(); renderPlAddGrid(); };
+    rootLi.appendChild(rn);
+    var ul = document.createElement('ul');
+    folderChildren(null).forEach(function (f) { ul.appendChild(plAddTreeNode(f)); });
+    rootLi.appendChild(ul);
+    root.appendChild(rootLi);
+  }
+  function plAddTreeNode(f) {
+    var li = document.createElement('li');
+    var n = document.createElement('div');
+    n.className = 'fnode' + (String(f.id) === String(_plAddFolder) ? ' sel' : '');
+    var cnt = (state.assets || []).filter(function (a) { return a.folder_id === f.id; }).length;
+    n.innerHTML = '<span class="fname">📁 ' + esc(f.name) + '</span>' + (cnt ? '<span class="fcount">' + cnt + '</span>' : '');
+    n.onclick = function () { _plAddFolder = String(f.id); _plAddMarked = []; renderPlAddTree(); renderPlAddCrumb(); renderPlAddGrid(); };
+    li.appendChild(n);
+    var kids = folderChildren(f.id);
+    if (kids.length) { var u = document.createElement('ul'); kids.forEach(function (c) { u.appendChild(plAddTreeNode(c)); }); li.appendChild(u); }
+    return li;
+  }
+  function renderPlAddCrumb() {
     var by = {}; (state.folders || []).forEach(function (f) { by[f.id] = f; });
     var crumbs = [{ id: '', name: 'Repositório' }];
     if (_plAddFolder !== '') {
@@ -1498,37 +1566,26 @@
       chain.forEach(function (f) { crumbs.push({ id: String(f.id), name: f.name }); });
     }
     $('plAddCrumb').innerHTML = crumbs.map(function (cr, i) {
-      return (i ? ' <span class="muted">/</span> ' : '') +
-        '<a href="#" data-f="' + cr.id + '" style="color:var(--acc)">' + esc(cr.name) + '</a>';
+      return (i ? ' <span class="muted">›</span> ' : '') + '<a href="#" data-f="' + cr.id + '">' + esc(cr.name) + '</a>';
     }).join('');
     Array.prototype.forEach.call($('plAddCrumb').querySelectorAll('a'), function (a) {
       a.onclick = function (e) {
         e.preventDefault(); _plAddFolder = a.getAttribute('data-f'); _plAddMarked = [];
-        renderPlAddNav(); renderPlAddGrid();
+        renderPlAddTree(); renderPlAddCrumb(); renderPlAddGrid();
       };
-    });
-    var pid = _plAddFolder === '' ? null : Number(_plAddFolder);
-    var kids = folderChildren(pid);
-    $('plAddSubfolders').innerHTML = kids.map(function (f) {
-      return '<button data-f="' + f.id + '" style="border:1px solid var(--line);background:#0d141c;color:var(--fg);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">📁 ' + esc(f.name) + '</button>';
-    }).join('') || '<span class="muted" style="font-size:12px">sem subpastas aqui</span>';
-    Array.prototype.forEach.call($('plAddSubfolders').querySelectorAll('button'), function (b) {
-      b.onclick = function () { _plAddFolder = b.getAttribute('data-f'); _plAddMarked = []; renderPlAddNav(); renderPlAddGrid(); };
     });
   }
   function renderPlAddGrid() {
     var g = $('plAddGrid'); g.innerHTML = '';
     var here = plAddAssetsHere();
-    if (!here.length) { g.innerHTML = '<p class="muted" style="font-size:12px">Nenhum arquivo nesta pasta.</p>'; return; }
+    if (!here.length) { g.innerHTML = '<p class="muted" style="font-size:12px;grid-column:1/-1">Nenhum arquivo nesta pasta.</p>'; return; }
     here.forEach(function (a) {
       var inSel = _plAddSel.indexOf(a.id) >= 0;
       var t = document.createElement('div');
-      t.className = 'atile' + (_plAddMarked.indexOf(a.id) >= 0 ? ' sel' : '');
-      if (inSel) t.style.opacity = '0.35';
-      t.innerHTML =
-        '<div class="thumb" data-glyph="' + assetGlyph(a.type) + '">' + thumbHtml(a) + '</div>' +
-        '<div class="aname" title="' + esc(a.filename) + '">' + esc(a.filename) + '</div>' +
-        '<div class="abadge"><span>' + esc(a.type) + '</span><span>' + fmtBytes(a.size_bytes) + '</span></div>';
+      t.className = 'pladd-tile' + (_plAddMarked.indexOf(a.id) >= 0 ? ' sel' : '') + (plAddIsDup(a.id) ? ' dup' : '');
+      if (inSel) t.style.opacity = '0.4';
+      t.innerHTML = '<div class="t" data-g="' + assetGlyph(a.type) + '">' + plAddMiniThumb(a) + '</div>' +
+        '<div class="n" title="' + esc(a.filename) + '">' + esc(a.filename) + '</div>';
       t.onclick = function () {
         if (inSel) return;
         var i = _plAddMarked.indexOf(a.id);
@@ -1541,19 +1598,33 @@
   function renderPlAddSel() {
     $('plAddSelN').textContent = _plAddSel.length;
     var g = $('plAddSelGrid'); g.innerHTML = '';
-    if (!_plAddSel.length) { g.innerHTML = '<p class="muted" style="font-size:12px">Vazio. Marque arquivos e clique em "enviar para a seleção".</p>'; }
+    if (!_plAddSel.length) { g.innerHTML = '<p class="muted" style="font-size:12px;grid-column:1/-1">Vazio — marque arquivos e clique "enviar para a seleção".</p>'; }
+    var dups = 0;
     _plAddSel.forEach(function (aid) {
       var a = (state.assets || []).find(function (x) { return x.id === aid; }); if (!a) return;
+      var dup = plAddIsDup(aid); if (dup) dups++;
       var t = document.createElement('div');
-      t.className = 'atile' + (_plAddSelPick === aid ? ' sel' : '');
-      t.innerHTML =
-        '<div class="thumb" data-glyph="' + assetGlyph(a.type) + '">' + thumbHtml(a) + '</div>' +
-        '<div class="aname" title="' + esc(a.filename) + '">' + esc(a.filename) + '</div>';
+      t.className = 'pladd-tile' + (_plAddSelPick === aid ? ' sel' : '') + (dup ? ' dup' : '');
+      t.title = dup ? 'já está na playlist — será adicionado de novo' : a.filename;
+      t.innerHTML = '<div class="t" data-g="' + assetGlyph(a.type) + '">' + plAddMiniThumb(a) + '</div>' +
+        '<div class="n">' + esc(a.filename) + '</div>';
       t.onclick = function () { _plAddSelPick = (_plAddSelPick === aid ? null : aid); renderPlAddSel(); };
       g.appendChild(t);
     });
     $('plAddSendBack').disabled = _plAddSelPick == null;
     $('plAddConfirm').disabled = !_plAddSel.length;
+    $('plAddConfirm').textContent = 'Adicionar à playlist' + (dups ? ' (⚠ ' + dups + ' repetido)' : '');
+  }
+  function renderPlAddPlRow() {
+    var row = $('plAddPlRow'); row.innerHTML = '';
+    if (!_plAddPlItems.length) { row.innerHTML = '<span class="muted" style="font-size:12px">playlist vazia</span>'; return; }
+    _plAddPlItems.forEach(function (it, i) {
+      var d = document.createElement('div'); d.className = 'pli-mini';
+      d.innerHTML = '<span class="num">' + (i + 1) + '</span>' +
+        '<div class="t" data-g="' + assetGlyph(it.type) + '">' + plAddMiniThumb(it) + '</div>' +
+        '<div class="n" title="' + esc(it.filename) + '">' + esc(it.filename) + '</div>';
+      row.appendChild(d);
+    });
   }
   $('plAddSend').onclick = function () {
     _plAddMarked.forEach(function (id) { if (_plAddSel.indexOf(id) < 0) _plAddSel.push(id); });
@@ -1568,12 +1639,16 @@
   $('plAddConfirm').onclick = function () {
     if (!_plAddSel.length || !state.activePlaylist) return;
     var pid = state.activePlaylist, ids = _plAddSel.slice(), i = 0, ok = 0;
+    var wasDup = ids.filter(plAddIsDup).length;
     $('plAddConfirm').disabled = true;
     (function next() {
       if (i >= ids.length) {
-        log('adicionados ' + ok + '/' + ids.length + ' à playlist');
-        $('plAddModal').classList.add('hidden');
-        loadPlaylistItems(); loadPlaylists();
+        log('adicionados ' + ok + '/' + ids.length + ' à playlist' +
+          (wasDup ? ' — ' + wasDup + ' ja existia(m), duplicado(s) permitido(s)' : ''));
+        _plAddSel = []; _plAddSelPick = null;
+        Promise.all([plAddRefreshPl(), loadPlaylistItems(), loadPlaylists()]).then(function () {
+          renderPlAddTree(); renderPlAddGrid(); renderPlAddSel(); renderPlAddPlRow();
+        });
         return;
       }
       var aid = ids[i++];

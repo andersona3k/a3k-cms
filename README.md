@@ -303,9 +303,14 @@ public/
                        inline (lapis ✎), label "Repositorio", linha de info com o
                        TAMANHO TOTAL (atualiza ao adicionar) + duracao; itens em
                        QUADROS/miniaturas numerados, drag p/ reordenar, ✕/⏸/🕐
-                       por item; "+ adicionar conteudo" abre #plAddModal (navega
-                       pelas pastas do repositorio, marca miniaturas, "enviar para
-                       a selecao", "remover" da selecao, "Adicionar a playlist").
+                       por item; "+ adicionar conteudo" abre #plAddModal (tela
+                       quase cheia): arvore de pastas a esquerda (navega tipo
+                       Explorer) | grade 3-col de miniaturas do repositorio |
+                       Selecao | e uma barra full-width embaixo com os itens
+                       atuais da playlist. "enviar para a selecao" -> "Adicionar
+                       a playlist" (limpa a selecao, modal fica aberta). Item da
+                       selecao/grade que JA esta na playlist fica com fundo
+                       amarelo + ⚠ no centro; duplicado e permitido, so avisa.
                        Arrasta a linha da lista e solta numa pasta da arvore ->
                        muda folder_id. Raiz "Projeto" nao pode
                        ser apagada (so renomear / criar subpasta); "(sem pasta)"
