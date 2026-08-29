@@ -122,10 +122,13 @@
     #libWrap { grid-template-columns:210px 1fr; }
     #libPreview { grid-column:1 / -1; }
   }
-  #libTree { border:1px solid var(--line); border-radius:9px; background:#0d141c; padding:10px; position:sticky; top:90px; }
-  #libTree .thead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
-  #libTree .thead b { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
-  #libTree .thead button { padding:3px 9px; font-size:12px; }
+  #libTree, #plTree { border:1px solid var(--line); border-radius:9px; background:#0d141c; padding:10px; position:sticky; top:90px; }
+  #libTree .thead, #plTree .thead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  #libTree .thead b, #plTree .thead b { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
+  #libTree .thead button, #plTree .thead button { padding:3px 9px; font-size:12px; }
+  .fnode.f-blue  .fname { color:var(--acc); }
+  .fnode.f-green .fname { color:#5fd08a; }
+  .fnode.f-gray  .fname { color:var(--mut); }
   .ftree, .ftree ul { list-style:none; margin:0; padding:0; }
   .ftree ul { margin-left:12px; border-left:1px solid var(--line); padding-left:4px; }
   .fnode { display:flex; align-items:center; gap:6px; padding:5px 6px; border-radius:6px; cursor:pointer; font-size:13px; }
@@ -136,9 +139,27 @@
   .fnode .fbtn { opacity:0; border:0; background:transparent; color:var(--mut); padding:0 3px; cursor:pointer; font-size:12px; line-height:1; }
   .fnode:hover .fbtn { opacity:1; }
   .fnode .fbtn:hover { color:var(--fg); }
-  #libMain .libbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
-  #libCrumb { font-weight:700; font-size:15px; }
-  #libCrumb .muted { font-weight:400; }
+  #libMain .libbar, #plMain .libbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+  #libCrumb, #plCrumb { font-weight:700; font-size:15px; }
+  #libCrumb .muted, #plCrumb .muted { font-weight:400; }
+
+  /* ---- aba Playlists em tela cheia ---- */
+  body[data-tab="pane-playlist"] main { max-width:none; }
+  #plWrap { display:grid; grid-template-columns:240px 1fr; gap:16px; align-items:start; }
+  @media (max-width:900px) { #plWrap { grid-template-columns:1fr; } #plTree { position:static; } }
+  #plListTbl td, #plListTbl th { font-size:12px; }
+  #plListTbl tbody tr { cursor:pointer; }
+  #plListTbl tbody tr:hover { background:#1b2733; }
+  #plListTbl .rowacts { display:flex; gap:5px; flex-wrap:wrap; }
+  #plListTbl .rowacts button { padding:4px 8px; font-size:11px; }
+  .pstat { font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; white-space:nowrap; }
+  .pstat.em_uso   { background:#173a29; color:#5fd08a; }
+  .pstat.planejada{ background:#1c2b3b; color:#7fb0e0; }
+  .pstat.vencida  { background:#3a1f1f; color:#ed8c8c; }
+  .pstat.arquivada{ background:#2a3947; color:var(--mut); }
+  #plEditModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
+  #plEditModal .modalBox { width:min(980px,95vw); max-height:92vh; overflow:auto; }
+  #plEditModal .modalBox select, #plEditModal .modalBox input { width:auto; }
   .assetgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:12px; }
   .atile { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#0d141c; cursor:pointer; }
   .atile:hover { border-color:var(--acc); }
@@ -218,29 +239,28 @@
 
   <div class="card tabpane" id="pane-playlist">
     <h2>Playlists</h2>
-    <div class="row">
-      <div><label>Nova playlist</label><input id="plName" placeholder="Vitrine" /></div>
-      <button id="plCreateBtn">Criar</button>
-      <div><label>Playlist ativa</label><select id="plSelect"></select></div>
-      <div><label>Orientação</label><select id="plRotation">
-        <option value="0">Horizontal</option>
-        <option value="90">V 90°</option>
-        <option value="90m">V 90° esp.</option>
-        <option value="270">V 270°</option>
-        <option value="180">Invertido (180°)</option>
-      </select></div>
-      <div><label>Arquivo</label><select id="plAsset"></select></div>
-      <div><label>Duração (s)</label><input id="plDur" type="number" value="10" style="width:80px" /></div>
-      <button id="plAddBtn">Adicionar item</button>
-      <button class="ghost" id="plPreviewBtn">Preview</button>
-      <button class="danger" id="plDeleteBtn">Apagar playlist</button>
+    <div id="plWrap">
+      <div id="plTree">
+        <div class="thead"><b>Pastas</b>
+          <button class="ghost" id="plFolderBtn" title="nova pasta (dentro da selecionada)">+ pasta</button></div>
+        <ul class="ftree" id="plTreeRoot"></ul>
+        <p class="muted" style="font-size:10px;margin:8px 4px 0">🟦 com playlist · 🟩 no ar · ⬜ vazia</p>
+      </div>
+      <div id="plMain">
+        <div class="libbar">
+          <span id="plCrumb">—</span>
+          <span style="flex:1"></span>
+          <button id="plNewBtn">+ playlist</button>
+          <label class="muted" style="margin:0;display:flex;gap:5px;align-items:center;font-size:12px">
+            <input type="checkbox" id="plShowArchived" style="width:auto"> arquivadas</label>
+        </div>
+        <table id="plListTbl"><thead><tr>
+          <th>Nome</th><th>Tipo</th><th>Orientação</th><th>Duração</th><th>Criada</th><th>Por</th>
+          <th>Status</th><th>Vigência</th><th>Ações</th>
+        </tr></thead><tbody id="plListBody"></tbody></table>
+        <p class="muted" id="plListEmpty" style="display:none">Nenhuma playlist nesta pasta.</p>
+      </div>
     </div>
-    <table id="plItemsTbl"><thead><tr>
-      <th style="width:24px"></th><th>#</th><th>Arquivo</th><th>Tipo</th><th>Formato</th>
-      <th>Orientação</th><th>Duração</th><th>Horário</th><th>Ações</th>
-    </tr></thead><tbody id="plItemsBody"></tbody></table>
-    <p class="muted" id="plVersion"></p>
-    <p class="muted">Arraste pela alca <span style="cursor:grab">⠿</span> para reordenar. A duracao salva ao sair do campo.</p>
   </div>
 
   <div class="card tabpane" id="pane-dispositivos">
@@ -359,6 +379,41 @@
   </div>
 </div>
 
+<div id="plEditModal" class="hidden">
+  <div class="modalBox">
+    <div class="row" style="justify-content:space-between">
+      <b id="plEditName">Playlist</b>
+      <button class="ghost" id="plEditClose">fechar</button>
+    </div>
+    <div class="row" style="margin-top:10px;align-items:end">
+      <div><label>Orientação</label><select id="plRotation">
+        <option value="0">Horizontal</option>
+        <option value="90">V 90°</option>
+        <option value="90m">V 90° esp.</option>
+        <option value="270">V 270°</option>
+        <option value="180">Invertido (180°)</option>
+      </select></div>
+      <div><label>Pasta</label><select id="plEditFolder"></select></div>
+      <div><label>Vigência — início</label><input type="date" id="plEditFrom" /></div>
+      <div><label>Vigência — fim</label><input type="date" id="plEditUntil" /></div>
+      <button id="plEditCfgSave">Salvar config.</button>
+    </div>
+    <div class="row" style="margin-top:10px;align-items:end">
+      <div><label>Arquivo</label><select id="plAsset"></select></div>
+      <div><label>Duração (s)</label><input id="plDur" type="number" value="10" style="width:80px" /></div>
+      <button id="plAddBtn">Adicionar item</button>
+      <button class="ghost" id="plPreviewBtn">Preview</button>
+      <button class="danger" id="plDeleteBtn">Apagar playlist</button>
+    </div>
+    <table id="plItemsTbl"><thead><tr>
+      <th style="width:24px"></th><th>#</th><th>Arquivo</th><th>Tipo</th><th>Formato</th>
+      <th>Orientação</th><th>Duração</th><th>Horário</th><th>Ações</th>
+    </tr></thead><tbody id="plItemsBody"></tbody></table>
+    <p class="muted" id="plVersion"></p>
+    <p class="muted" style="font-size:11px">Arraste pela alça <span style="cursor:grab">⠿</span> para reordenar. A duração salva ao sair do campo.</p>
+  </div>
+</div>
+
 <script src="/vendor/sortablejs/Sortable.min.js"></script>
 <script>
 (function () {
@@ -366,7 +421,8 @@
   var API = location.origin;
   var token = localStorage.getItem('a3k_admin_token') || '';
   var state = { assets: [], playlists: [], folders: [], groups: [], roles: [], me: null,
-    companyCtx: '', activePlaylist: null, currentFolder: '', selectedAsset: null };
+    companyCtx: '', activePlaylist: null, currentFolder: '', selectedAsset: null,
+    plFolders: [], plCurrentFolder: '' };
 
   var $ = function (id) { return document.getElementById(id); };
   function log(m) { $('log').textContent = '[' + new Date().toLocaleTimeString() + '] ' + m + '\n' + $('log').textContent; }
@@ -842,14 +898,7 @@
   }
   function row(k, v) { return '<dt>' + k + '</dt><dd>' + v + '</dd>'; }
 
-  // ---- playlists ----
-  $('plCreateBtn').onclick = function () {
-    var name = $('plName').value.trim(); if (!name) return;
-    jpost('/api/playlists', { name: name })
-      .then(function (d) { log('playlist #' + d.playlist.id + ' criada'); $('plName').value = '';
-        state.activePlaylist = d.playlist.id; return loadPlaylists(); })
-      .catch(function (e) { log('playlist: ' + e.message); });
-  };
+  // ---- playlists: pastas (arvore) + lista + modal de edicao ----
   function oriValue(p) {
     if (!p) return '0';
     return String(p.rotation || 0) + (p.mirror ? 'm' : '');
@@ -858,54 +907,245 @@
     var r = { 0: 'Horizontal', 90: 'V 90°', 180: 'Invertido 180°', 270: 'V 270°' }[Number(rot) || 0] || 'Horizontal';
     return mir ? r + ' esp.' : r;
   }
-  $('plSelect').onchange = function () {
-    state.activePlaylist = Number(this.value);
-    var act = state.playlists.find(function (p) { return p.id === state.activePlaylist; });
-    $('plRotation').value = oriValue(act);
-    loadPlaylistItems();
+  var PL_MAX_DEPTH = 3;
+  var _projetoTried = false;
+
+  function plFoldersBy() { var m = {}; (state.plFolders || []).forEach(function (f) { m[f.id] = f; }); return m; }
+  function plFolderDepth(f) { var d = 1, by = plFoldersBy(), c = f; while (c && c.parent_id) { d++; c = by[c.parent_id]; } return d; }
+  function plFolderChildren(pid) {
+    return (state.plFolders || [])
+      .filter(function (f) { return (f.parent_id || null) === (pid || null); })
+      .sort(function (a, b) {
+        if (!pid) { if (a.name === 'Projeto') return -1; if (b.name === 'Projeto') return 1; }
+        return a.name.localeCompare(b.name, 'pt');
+      });
+  }
+  function plFolderPath(id) { var by = plFoldersBy(), out = [], c = by[id]; while (c) { out.unshift(c.name); c = by[c.parent_id]; } return out.join(' / '); }
+  function plsInFolder(fid) {
+    var f = fid === '' ? null : Number(fid);
+    return (state.playlists || []).filter(function (p) { return (p.folder_id || null) === f; });
+  }
+  function plFolderColor(fid) {
+    var here = plsInFolder(fid);
+    if (!here.length) return 'f-gray';
+    return here.some(function (p) { return p.assigned && !p.suspended; }) ? 'f-green' : 'f-blue';
+  }
+
+  function loadPlFolders() {
+    return api('/api/playlist-folders').then(function (d) {
+      state.plFolders = d.folders;
+      var hasRoot = state.plFolders.some(function (f) { return !f.parent_id && f.name === 'Projeto'; });
+      if (!hasRoot && !_projetoTried) {
+        _projetoTried = true;
+        return jpost('/api/playlist-folders', { name: 'Projeto' }).then(loadPlFolders).catch(function () {});
+      }
+      if (state.plCurrentFolder === '' ||
+          !state.plFolders.some(function (f) { return String(f.id) === String(state.plCurrentFolder); })) {
+        var home = plFolderChildren(null)[0];
+        state.plCurrentFolder = home ? String(home.id) : '';
+      }
+    });
+  }
+
+  function renderPlTree() {
+    var root = $('plTreeRoot'); if (!root) return;
+    root.innerHTML = '';
+    plFolderChildren(null).forEach(function (f) { root.appendChild(plTreeNode(f)); });
+    var unf = plsInFolder('').length;
+    if (unf > 0) {
+      var li = document.createElement('li');
+      var n = document.createElement('div');
+      n.className = 'fnode ' + plFolderColor('') + (state.plCurrentFolder === '' ? ' sel' : '');
+      n.innerHTML = '<span class="fname">🗂️ (sem pasta)</span><span class="fcount">' + unf + '</span>';
+      n.onclick = function () { selectPlFolder(''); };
+      li.appendChild(n); root.appendChild(li);
+    }
+    $('plCrumb').innerHTML = state.plCurrentFolder === ''
+      ? '<span class="muted">(sem pasta)</span>' : esc(plFolderPath(state.plCurrentFolder) || '-');
+  }
+  function plTreeNode(f) {
+    var li = document.createElement('li');
+    var n = document.createElement('div');
+    n.className = 'fnode ' + plFolderColor(f.id) + (String(f.id) === String(state.plCurrentFolder) ? ' sel' : '');
+    var nm = document.createElement('span'); nm.className = 'fname'; nm.textContent = '📁 ' + f.name;
+    var ct = document.createElement('span'); ct.className = 'fcount'; ct.textContent = plsInFolder(f.id).length || '';
+    n.appendChild(nm); n.appendChild(ct);
+    if (plFolderDepth(f) < PL_MAX_DEPTH) {
+      var ab = document.createElement('button'); ab.className = 'fbtn'; ab.textContent = '＋'; ab.title = 'nova subpasta';
+      ab.onclick = function (e) { e.stopPropagation(); createPlFolder(f.id); };
+      n.appendChild(ab);
+    }
+    var rb = document.createElement('button'); rb.className = 'fbtn'; rb.textContent = '✎'; rb.title = 'renomear';
+    rb.onclick = function (e) { e.stopPropagation(); renamePlFolder(f); };
+    var db2 = document.createElement('button'); db2.className = 'fbtn'; db2.textContent = '🗑'; db2.title = 'apagar';
+    db2.onclick = function (e) { e.stopPropagation(); deletePlFolder(f); };
+    n.appendChild(rb); n.appendChild(db2);
+    n.onclick = function () { selectPlFolder(String(f.id)); };
+    li.appendChild(n);
+    var kids = plFolderChildren(f.id);
+    if (kids.length) { var ul = document.createElement('ul'); kids.forEach(function (c) { ul.appendChild(plTreeNode(c)); }); li.appendChild(ul); }
+    return li;
+  }
+  function selectPlFolder(id) { state.plCurrentFolder = id; renderPlTree(); renderPlList(); }
+  function createPlFolder(parentId) {
+    var name = (prompt(parentId ? 'Nome da subpasta' : 'Nome da nova pasta') || '').trim();
+    if (!name) return;
+    var body = { name: name }; if (parentId) body.parent_id = Number(parentId);
+    jpost('/api/playlist-folders', body).then(function (d) {
+      log('pasta de playlist "' + d.folder.name + '" criada'); state.plCurrentFolder = String(d.folder.id);
+      loadPlaylists();
+    }).catch(function (e) { log('pasta: ' + e.message); });
+  }
+  function renamePlFolder(f) {
+    var n = (prompt('Novo nome', f.name) || '').trim(); if (!n || n === f.name) return;
+    jpost('/api/playlist-folders/' + f.id, { name: n }, 'PATCH').then(loadPlaylists).catch(function (e) { log(e.message); });
+  }
+  function deletePlFolder(f) {
+    api('/api/playlist-folders/' + f.id, { method: 'DELETE' }).then(after).catch(function (e) {
+      if (e.body && e.body.error === 'pasta nao vazia') {
+        if (confirm('"' + f.name + '" tem ' + e.body.subfolder_count + ' subpasta(s) e ' + e.body.playlist_count +
+          ' playlist(s). Apagar as subpastas e soltar as playlists?'))
+          api('/api/playlist-folders/' + f.id + '?force=true', { method: 'DELETE' }).then(after).catch(function (e2) { log(e2.message); });
+      } else log('apagar pasta: ' + e.message);
+    });
+    function after() { if (String(state.plCurrentFolder) === String(f.id)) state.plCurrentFolder = ''; loadPlaylists(); }
+  }
+  $('plFolderBtn').onclick = function () {
+    var cur = state.plCurrentFolder ? plFoldersBy()[state.plCurrentFolder] : null;
+    if (!cur) return createPlFolder(null);
+    createPlFolder(plFolderDepth(cur) >= PL_MAX_DEPTH ? (cur.parent_id || null) : cur.id);
   };
+  $('plNewBtn').onclick = function () {
+    var name = (prompt('Nome da nova playlist') || '').trim(); if (!name) return;
+    var body = { name: name };
+    if (state.plCurrentFolder) body.folder_id = Number(state.plCurrentFolder);
+    jpost('/api/playlists', body).then(function (d) {
+      log('playlist #' + d.playlist.id + ' criada'); loadPlaylists().then(function () { openPlEdit(d.playlist.id); });
+    }).catch(function (e) { log('playlist: ' + e.message); });
+  };
+  $('plShowArchived').onchange = function () { loadPlaylists(); };
+
+  function tipoLabel(ct) { return { video: 'Vídeo', imagem: 'Imagem', mix: 'Mix', dashboard: 'Dashboard' }[ct] || '—'; }
+  function fmtDur(sec) {
+    sec = Math.round(Number(sec) || 0);
+    if (sec < 60) return sec + 's';
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return m + 'min' + (s ? ' ' + s + 's' : '');
+  }
+  function plStatusLabel(s) { return { em_uso: 'Em uso', planejada: 'Planejada', vencida: 'Vencida' }[s] || s; }
+  function vigenciaText(p) {
+    if (!p.valid_from && !p.valid_until) return '<span class="muted">sem vigência</span>';
+    return esc((p.valid_from || '…') + '  →  ' + (p.valid_until || '…'));
+  }
+
+  function renderPlList() {
+    var tb = $('plListBody'); if (!tb) return;
+    tb.innerHTML = '';
+    var f = state.plCurrentFolder === '' ? null : Number(state.plCurrentFolder);
+    var showArch = $('plShowArchived').checked;
+    var here = (state.playlists || []).filter(function (p) {
+      return (p.folder_id || null) === f && (showArch || !p.archived);
+    });
+    here.forEach(function (p) {
+      var tr = document.createElement('tr');
+      var st = p.archived ? 'arquivada' : p.status;
+      var stLabel = p.archived ? 'Arquivada' : plStatusLabel(p.status);
+      tr.innerHTML =
+        '<td><b>' + esc(p.name) + '</b>' + (p.suspended ? ' <span class="muted">(suspensa)</span>' : '') +
+        ' <span class="muted">v' + p.version + '</span></td>' +
+        '<td>' + tipoLabel(p.content_type) + '</td>' +
+        '<td>' + oriLabel(p.rotation, p.mirror) + '</td>' +
+        '<td>' + fmtDur(p.total_duration) + ' <span class="muted">(' + p.item_count + ')</span></td>' +
+        '<td class="muted">' + esc(String(p.created_at || '').slice(0, 10)) + '</td>' +
+        '<td class="muted">' + esc(p.created_by || '—') + '</td>' +
+        '<td><span class="pstat ' + st + '">' + stLabel + '</span></td>' +
+        '<td>' + vigenciaText(p) + '</td>' +
+        '<td></td>';
+      tr.onclick = function () { openPlEdit(p.id); };
+
+      var acts = document.createElement('div'); acts.className = 'rowacts';
+      var sus = document.createElement('button'); sus.className = 'ghost'; sus.textContent = p.suspended ? 'Retomar' : 'Suspender';
+      sus.onclick = function (e) { e.stopPropagation(); patchPl(p.id, { suspended: !p.suspended }, p.suspended ? 'retomada' : 'suspensa'); };
+      var arc = document.createElement('button'); arc.className = 'ghost'; arc.textContent = p.archived ? 'Desarquivar' : 'Arquivar';
+      arc.onclick = function (e) { e.stopPropagation(); patchPl(p.id, { archived: !p.archived }, p.archived ? 'desarquivada' : 'arquivada'); };
+      var rem = document.createElement('button'); rem.className = 'danger'; rem.textContent = 'Remover';
+      rem.onclick = function (e) { e.stopPropagation(); removePl(p); };
+      acts.appendChild(sus); acts.appendChild(arc); acts.appendChild(rem);
+      tr.children[8].appendChild(acts);
+      tb.appendChild(tr);
+    });
+    $('plListEmpty').style.display = here.length ? 'none' : 'block';
+  }
+  function patchPl(id, body, verb) {
+    jpost('/api/playlists/' + id, body, 'PATCH')
+      .then(function () { log('playlist #' + id + ' ' + verb); loadPlaylists(); loadDevices && loadDevices(); })
+      .catch(function (e) { log(e.message); });
+  }
+  function removePl(p) {
+    if (!confirm('Remover a playlist "' + p.name + '"? Itens e atribuições vão junto.')) return;
+    api('/api/playlists/' + p.id, { method: 'DELETE' }).then(done).catch(function (e) {
+      if (e.body && e.body.targets) {
+        if (confirm('Está atribuída a ' + e.body.targets.length + ' alvo(s). Remover mesmo assim?'))
+          api('/api/playlists/' + p.id + '?force=true', { method: 'DELETE' }).then(done).catch(function (e2) { log(e2.message); });
+      } else log('remover playlist: ' + e.message);
+    });
+    function done() { log('playlist removida'); if (state.activePlaylist === p.id) closePlEdit(); loadPlaylists(); loadDevices(); loadGroups(); }
+  }
+
+  // ---- modal de edicao da playlist ----
+  function openPlEdit(id) {
+    state.activePlaylist = id;
+    var p = (state.playlists || []).find(function (x) { return x.id === id; }) || { name: '#' + id };
+    $('plEditName').textContent = p.name + (p.version ? ' — v' + p.version : '');
+    $('plRotation').value = oriValue(p);
+    var fsel = $('plEditFolder');
+    fsel.innerHTML = '<option value="">(sem pasta)</option>' + (state.plFolders || []).map(function (f) {
+      return '<option value="' + f.id + '"' + (String(f.id) === String(p.folder_id || '') ? ' selected' : '') + '>' + esc(plFolderPath(f.id)) + '</option>';
+    }).join('');
+    $('plEditFrom').value = p.valid_from || '';
+    $('plEditUntil').value = p.valid_until || '';
+    $('plEditModal').classList.remove('hidden');
+    loadPlaylistItems();
+  }
+  function closePlEdit() { $('plEditModal').classList.add('hidden'); state.activePlaylist = null; }
+  $('plEditClose').onclick = function () { closePlEdit(); loadPlaylists(); };
+  $('plEditCfgSave').onclick = function () {
+    if (!state.activePlaylist) return;
+    jpost('/api/playlists/' + state.activePlaylist, {
+      folder_id: $('plEditFolder').value ? Number($('plEditFolder').value) : null,
+      valid_from: $('plEditFrom').value || null,
+      valid_until: $('plEditUntil').value || null,
+    }, 'PATCH').then(function () { log('config da playlist salva'); loadPlaylists(); })
+      .catch(function (e) { log('config: ' + e.message); });
+  };
+
   $('plRotation').onchange = function () {
     if (!state.activePlaylist) return;
     var v = this.value;
-    var body = { rotation: Number(v.replace('m', '')), mirror: v.indexOf('m') >= 0 ? 1 : 0 };
-    jpost('/api/playlists/' + state.activePlaylist, body, 'PATCH')
-      .then(function (d) { log('playlist orientação=' + v + ' (v' + d.playlist.version + ')');
-        loadPlaylists(); })
+    jpost('/api/playlists/' + state.activePlaylist, { rotation: Number(v.replace('m', '')), mirror: v.indexOf('m') >= 0 ? 1 : 0 }, 'PATCH')
+      .then(function (d) { log('playlist orientação=' + v + ' (v' + d.playlist.version + ')'); loadPlaylists(); })
       .catch(function (e) { log('orientação: ' + e.message); });
   };
   $('plDeleteBtn').onclick = function () {
     if (!state.activePlaylist) return;
-    var p = state.playlists.find(function (x) { return x.id === state.activePlaylist; });
-    if (!confirm('Apagar a playlist "' + (p ? p.name : state.activePlaylist) + '"? Itens e atribuições vão junto.')) return;
-    api('/api/playlists/' + state.activePlaylist, { method: 'DELETE' }).then(done).catch(function (e) {
-      if (e.body && e.body.targets) {
-        if (confirm('Está atribuída a ' + e.body.targets.length + ' alvo(s). Apagar mesmo assim?'))
-          api('/api/playlists/' + state.activePlaylist + '?force=true', { method: 'DELETE' }).then(done).catch(function (e2) { log(e2.message); });
-      } else log('apagar playlist: ' + e.message);
-    });
-    function done() { log('playlist apagada'); state.activePlaylist = null; loadPlaylists(); loadDevices(); loadGroups(); }
+    var p = (state.playlists || []).find(function (x) { return x.id === state.activePlaylist; }) || { id: state.activePlaylist, name: '#' + state.activePlaylist };
+    removePl(p);
   };
   $('plAddBtn').onclick = function () {
-    if (!state.activePlaylist) return log('crie/selecione uma playlist');
+    if (!state.activePlaylist) return log('selecione uma playlist');
     jpost('/api/playlists/' + state.activePlaylist + '/items',
       { asset_id: Number($('plAsset').value), duration: Number($('plDur').value) })
       .then(function (d) { log('item add, playlist v' + d.version); loadPlaylistItems(); loadPlaylists(); })
       .catch(function (e) { log('item: ' + e.message); });
   };
+
   function loadPlaylists() {
-    return api('/api/playlists').then(function (d) {
-      state.playlists = d.playlists;
-      var sel = $('plSelect'); sel.innerHTML = '';
-      d.playlists.forEach(function (p) {
-        var o = document.createElement('option'); o.value = p.id;
-        o.textContent = p.name + ' (v' + p.version + ', ' + p.item_count + ' itens)';
-        sel.appendChild(o);
-      });
-      if (!state.activePlaylist && d.playlists[0]) state.activePlaylist = d.playlists[0].id;
-      if (state.activePlaylist) sel.value = state.activePlaylist;
-      var act = d.playlists.find(function (p) { return p.id === state.activePlaylist; });
-      $('plRotation').value = oriValue(act);
-      return loadPlaylistItems();
+    var q = $('plShowArchived') && $('plShowArchived').checked ? '?include_archived=true' : '';
+    return Promise.all([api('/api/playlists' + q), loadPlFolders()]).then(function (r) {
+      state.playlists = r[0].playlists;
+      renderPlTree();
+      renderPlList();
+      if (state.activePlaylist && !$('plEditModal').classList.contains('hidden')) return loadPlaylistItems();
     });
   }
   var sortable = null;

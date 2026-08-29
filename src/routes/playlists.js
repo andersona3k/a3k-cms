@@ -73,10 +73,16 @@ router.post('/', (req, res) => {
     if (!ROTATIONS.includes(rotation)) return res.status(400).json({ error: 'rotation deve ser 0, 90, 180 ou 270' });
   }
   const db = getDb();
+  const folderId = req.body && req.body.folder_id ? Number(req.body.folder_id) : null;
+  if (folderId) {
+    const f = db.prepare('SELECT id FROM playlist_folders WHERE id = ? AND company_id = ?')
+      .get(folderId, req.auth.companyId);
+    if (!f) return res.status(400).json({ error: 'folder_id invalido' });
+  }
   try {
     const info = db
-      .prepare('INSERT INTO playlists (company_id, name, rotation) VALUES (?, ?, ?)')
-      .run(req.auth.companyId, name, rotation);
+      .prepare('INSERT INTO playlists (company_id, name, rotation, folder_id, created_by) VALUES (?, ?, ?, ?, ?)')
+      .run(req.auth.companyId, name, rotation, folderId, req.auth.email || null);
     const playlist = db
       .prepare('SELECT * FROM playlists WHERE id = ?')
       .get(Number(info.lastInsertRowid));
@@ -89,15 +95,55 @@ router.post('/', (req, res) => {
   }
 });
 
-// GET /api/playlists
-router.get('/', (req, res) => {
-  const rows = getDb()
+// status de gestao da playlist: 'vencida' | 'em_uso' | 'planejada'
+function playlistStatus(p, todayYmd) {
+  if (p.valid_until && p.valid_until < todayYmd) return 'vencida';
+  if (p.assigned) return 'em_uso';
+  return 'planejada';
+}
+
+// tipo de conteudo a partir dos itens: 'video' | 'imagem' | 'mix' | null
+function contentType(db, playlistId) {
+  const rows = db
     .prepare(
-      `SELECT p.*, (SELECT COUNT(*) FROM playlist_items WHERE playlist_id = p.id) AS item_count
-         FROM playlists p WHERE p.company_id = ? ORDER BY p.id DESC`
+      `SELECT a.type, COUNT(*) n
+         FROM playlist_items pi JOIN assets a ON a.id = pi.asset_id
+        WHERE pi.playlist_id = ? GROUP BY a.type`
+    )
+    .all(playlistId);
+  if (!rows.length) return null;
+  if (rows.length > 1) return 'mix';
+  const t = rows[0].type;
+  return t === 'image' ? 'imagem' : t === 'video' ? 'video' : t;
+}
+
+// GET /api/playlists[?include_archived=true]
+router.get('/', (req, res) => {
+  const db = getDb();
+  const includeArchived = req.query.include_archived === 'true' || req.query.include_archived === '1';
+  const rows = db
+    .prepare(
+      `SELECT p.*,
+              (SELECT COUNT(*) FROM playlist_items WHERE playlist_id = p.id) AS item_count,
+              (SELECT COALESCE(SUM(duration), 0) FROM playlist_items
+                 WHERE playlist_id = p.id AND suspended = 0) AS total_duration,
+              EXISTS (SELECT 1 FROM assignments a
+                       WHERE a.company_id = p.company_id AND a.playlist_id = p.id) AS assigned
+         FROM playlists p
+        WHERE p.company_id = ? ${includeArchived ? '' : 'AND p.archived = 0'}
+        ORDER BY p.id DESC`
     )
     .all(req.auth.companyId);
-  res.json({ playlists: rows });
+  const today = new Date().toISOString().slice(0, 10);
+  const playlists = rows.map((p) => ({
+    ...p,
+    assigned: !!p.assigned,
+    suspended: !!p.suspended,
+    archived: !!p.archived,
+    content_type: contentType(db, p.id),
+    status: playlistStatus(p, today),
+  }));
+  res.json({ playlists });
 });
 
 // GET /api/playlists/:id  (com itens)
@@ -124,7 +170,9 @@ router.get('/:id/manifest', (req, res) => {
   res.json(buildPlaylistManifest(playlist, activeAt));
 });
 
-// PATCH /api/playlists/:id  { name?, rotation? }
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// PATCH /api/playlists/:id  { name?, rotation?, mirror?, folder_id?, valid_from?, valid_until?, suspended?, archived? }
 router.patch('/:id', (req, res) => {
   const db = getDb();
   const playlist = getPlaylistScoped(db, req.params.id, req.auth.companyId);
@@ -142,11 +190,43 @@ router.patch('/:id', (req, res) => {
 
   const sets = [];
   const vals = [];
-  if (!rot.skip && rot.value !== playlist.rotation) { sets.push('rotation = ?'); vals.push(rot.value); }
-  if (!mir.skip && mir.value !== playlist.mirror) { sets.push('mirror = ?'); vals.push(mir.value); }
+  let bumps = false; // mudou algo que o player ve?
+
+  if (!rot.skip && rot.value !== playlist.rotation) { sets.push('rotation = ?'); vals.push(rot.value); bumps = true; }
+  if (!mir.skip && mir.value !== playlist.mirror) { sets.push('mirror = ?'); vals.push(mir.value); bumps = true; }
+
+  if (b.folder_id !== undefined) {
+    const fid = b.folder_id === null || b.folder_id === '' ? null : Number(b.folder_id);
+    if (fid !== null) {
+      const f = db.prepare('SELECT id FROM playlist_folders WHERE id = ? AND company_id = ?')
+        .get(fid, req.auth.companyId);
+      if (!f) return res.status(400).json({ error: 'folder_id invalido' });
+    }
+    sets.push('folder_id = ?'); vals.push(fid);
+  }
+  for (const k of ['valid_from', 'valid_until']) {
+    if (b[k] !== undefined) {
+      const v = b[k] === null || b[k] === '' ? null : String(b[k]).slice(0, 10);
+      if (v !== null && !YMD_RE.test(v)) return res.status(400).json({ error: `${k}: use YYYY-MM-DD` });
+      sets.push(`${k} = ?`); vals.push(v);
+    }
+  }
+  const vf = b.valid_from !== undefined ? (b.valid_from || null) : playlist.valid_from;
+  const vu = b.valid_until !== undefined ? (b.valid_until || null) : playlist.valid_until;
+  if (vf && vu && String(vf).slice(0, 10) > String(vu).slice(0, 10)) {
+    return res.status(400).json({ error: 'vigencia: inicio depois do fim' });
+  }
+  if (b.suspended !== undefined) {
+    const s = b.suspended ? 1 : 0;
+    if (s !== playlist.suspended) { sets.push('suspended = ?'); vals.push(s); bumps = true; }
+  }
+  if (b.archived !== undefined) {
+    sets.push('archived = ?'); vals.push(b.archived ? 1 : 0);
+  }
+
   if (sets.length) {
-    // muda a renderizacao -> forca re-sync no player
-    sets.push(`version = version + 1`, `updated_at = datetime('now')`);
+    if (bumps) sets.push('version = version + 1');
+    sets.push(`updated_at = datetime('now')`);
     vals.push(playlist.id);
     db.prepare(`UPDATE playlists SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
   }

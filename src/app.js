@@ -11,6 +11,7 @@ const { listAdapters, PLAYER_TYPES } = require('./adapters');
 const assetsRoutes = require('./routes/assets');
 const foldersRoutes = require('./routes/folders');
 const playlistsRoutes = require('./routes/playlists');
+const playlistFoldersRoutes = require('./routes/playlistFolders');
 const devicesRoutes = require('./routes/devices');
 const deviceGroupsRoutes = require('./routes/deviceGroups');
 const pairingRoutes = require('./routes/pairing');
@@ -48,6 +49,7 @@ function createApp() {
   // Admin (JWT).
   app.use('/api/assets', assetsRoutes);
   app.use('/api/folders', foldersRoutes);
+  app.use('/api/playlist-folders', playlistFoldersRoutes);
   app.use('/api/playlists', playlistsRoutes);
   app.use('/api/device-groups', deviceGroupsRoutes);
   app.use('/api/devices', devicesRoutes);

@@ -286,11 +286,20 @@ public/
                        renomear / remover asset) e "Condicionais" (validade
                        inicio/fim com data+hora, dias da semana, horario 24h;
                        criado por + ultimas 3 modificacoes).
+                       Aba Playlists = tela cheia, 2 colunas: arvore de
+                       playlist_folders ("Projeto" garantida na raiz; ate 3
+                       niveis; pasta AZUL = tem playlist, VERDE = tem playlist no
+                       ar, CINZA = vazia) + tabela (Nome · Tipo Video/Imagem/Mix ·
+                       Orientacao · Duracao total · Criada · Por · Status Em uso/
+                       Planejada/Vencida · Vigencia · Acoes Suspender/Arquivar/
+                       Remover). Clicar na linha abre #plEditModal (a tela de
+                       edicao de antes: orientacao, pasta, vigencia, add item,
+                       preview, tabela de itens com drag/horario/suspender).
 node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m12.test.js  testes de aceite (128 no total)
+  m0..m13.test.js  testes de aceite (133 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -300,7 +309,12 @@ por plataforma. Sem toolchain nativo. `FFPROBE_PATH` no `.env` sobrescreve.
 
 `companies`, `roles` (`permissions` JSON), `users` (`is_superadmin` no M5).
 `folders`, `assets` — biblioteca (colunas de metadados nullable ate o M2).
-`playlists` (com `version`), `playlist_items` (com `schedule` JSON de day-parting, M6).
+`playlists` (com `version`; migration 011 add `folder_id`, `created_by`,
+`valid_from`/`valid_until` [YYYY-MM-DD], `suspended`, `archived`),
+`playlist_folders` (arvore, 011), `playlist_items` (com `schedule` JSON de day-parting, M6).
+`GET /api/playlists` calcula `content_type` (video/imagem/mix), `total_duration`,
+`assigned` e `status` (vencida/em_uso/planejada). Playlist `suspended` -> manifest
+sai vazio (bumpa version); `archived` some da lista (a menos de `?include_archived=true`).
 `assets` ganhou `format`, `metadata` (dump cru do probe), `probe_status`
 (`pending`/`ok`/`error`/`skipped`) e `probe_error` no M2; `thumb_url` (migration
 009) = poster de video (`ffmpeg` extrai 1 frame no probe -> `media/<hash>.thumb.jpg`,

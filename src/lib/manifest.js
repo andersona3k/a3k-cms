@@ -76,8 +76,10 @@ function buildPlaylistManifest(playlist, activeAt) {
     version: playlist.version,
     rotation: playlist.rotation || 0,
     mirror: playlist.mirror ? 1 : 0,
+    suspended: playlist.suspended ? 1 : 0,
     generatedAt: new Date().toISOString(),
-    items: playlistManifestItems(db, playlist.id, activeAt),
+    // playlist suspensa -> nao entrega nada (o player fica em "nada programado")
+    items: playlist.suspended ? [] : playlistManifestItems(db, playlist.id, activeAt),
   };
 }
 
