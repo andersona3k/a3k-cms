@@ -127,9 +127,25 @@
   .pfill.stale { background:#6b7785; } .pfill.none { background:transparent; }
   .pmeta { display:flex; justify-content:space-between; gap:10px; font-size:11px; margin-top:3px; }
   tr.dev-row { cursor:pointer; }
-  #devModal .modalBox { width:580px; max-height:88vh; overflow:auto; }
-  #devModal dl { display:grid; grid-template-columns:130px 1fr; gap:4px 10px; font-size:13px; margin:10px 0; }
+  #devModalBox { width:96vw; max-width:96vw; height:94vh; max-height:94vh; display:flex; flex-direction:column; gap:8px; }
+  #devModalHdr { flex:0 0 auto; }
+  #devModalBody { flex:1; min-height:0; overflow:auto; display:grid; grid-template-columns:1fr 1fr; gap:14px; align-content:start; }
+  #devModalBody .dmspan2 { grid-column:1 / -1; }
+  #devModalBody .dmsec { border:1px solid var(--line); border-radius:9px; background:#0b1219; padding:10px 12px; }
+  #devModalBody .dmsec > h3 { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; margin:0 0 8px; }
+  #devModal dl { display:grid; grid-template-columns:130px 1fr; gap:4px 10px; font-size:13px; margin:0; }
   #devModal dt { color:var(--mut); } #devModal dd { margin:0; word-break:break-all; }
+  .dmpill { padding:4px 10px; border:1px solid var(--line); border-radius:999px; background:#0d141c; cursor:pointer; font-size:12px; }
+  .dmpill.on { background:var(--acc); border-color:var(--acc); color:#fff; }
+  .dmcmd { position:relative; }
+  .dmcmd.ok { background:#173a29; border-color:#2c6; color:#8fe6b0; }
+  .dmcmd.err { background:#3a3410; border-color:#c9a227; color:#e6cf7a; }
+  .dmshot { width:100%; border:1px solid var(--line); border-radius:6px; background:#000; object-fit:contain; max-height:220px; }
+  .dmthumb { width:96px; height:54px; object-fit:cover; border:1px solid var(--line); border-radius:4px; background:#000; cursor:pointer; }
+  #devModalBody table { width:100%; border-collapse:collapse; font-size:11px; }
+  #devModalBody th, #devModalBody td { text-align:left; padding:3px 6px; border-bottom:1px solid var(--line); }
+  .dmlogwrap { max-height:200px; overflow:auto; }
+  @media (max-width:900px) { #devModalBody { grid-template-columns:1fr; } }
   .histlist { list-style:none; padding:0; margin:6px 0 0; font-size:12px; }
   .histlist li { padding:6px 0; border-bottom:1px solid var(--line); }
   .histlist .who { color:var(--mut); }
@@ -548,13 +564,17 @@
 
 
 <div id="devModal" class="hidden">
-  <div class="modalBox">
-    <div class="row" style="justify-content:space-between"><b>Editar player</b>
-      <button class="ghost" id="dmClose">fechar</button></div>
-    <div id="devModalBody"></div>
-    <div class="row" style="margin-top:14px">
-      <button id="dmSave">Salvar</button>
+  <div class="modalBox" id="devModalBox">
+    <div class="row" id="devModalHdr" style="justify-content:space-between;align-items:center">
+      <span style="display:flex;gap:6px;align-items:center">
+        <b id="dmTitle" style="font-size:15px">Player</b>
+        <button class="ghost" id="dmEdit" title="Editar nome / grupo / playlist">✏️ Editar</button>
+        <button class="danger" id="dmDelete" title="Apagar o device">🗑 Apagar</button>
+        <button id="dmSave" title="Salvar alterações" disabled>💾 Salvar</button>
+      </span>
+      <button class="ghost" id="dmClose" title="Fechar" style="font-size:15px;line-height:1;padding:6px 10px">✕</button>
     </div>
+    <div id="devModalBody"></div>
   </div>
 </div>
 
@@ -2293,21 +2313,7 @@
       '<td class="muted">' + fmtAgo(dev.last_seen) + '</td>' +
       '<td></td>';
     tr.onclick = function () { openDevModal(dev.id); };
-
-    var act = document.createElement('div'); act.className = 'actcell';
-    var ebtn = document.createElement('button'); ebtn.className = 'ghost'; ebtn.textContent = 'editar';
-    ebtn.onclick = function (e) { e.stopPropagation(); openDevModal(dev.id); };
-    var dbtn = document.createElement('button'); dbtn.className = 'danger'; dbtn.textContent = 'apagar';
-    dbtn.onclick = function (e) {
-      e.stopPropagation();
-      if (!confirm('Apagar o device ' + dev.serial + (dev.name ? ' (' + dev.name + ')' : '') +
-        '? Se o player ainda existir, ele pareia de novo como device novo.')) return;
-      api('/api/devices/' + dev.id, { method: 'DELETE' })
-        .then(function () { log('device ' + dev.serial + ' apagado'); loadGroups().then(loadDevices); })
-        .catch(function (e2) { log('apagar device: ' + e2.message); });
-    };
-    act.appendChild(ebtn); act.appendChild(dbtn);
-    tr.children[6].appendChild(act);
+    tr.children[6].innerHTML = '<span class="muted" style="font-size:11px">abrir ›</span>';
     return tr;
   }
 
@@ -2396,88 +2402,225 @@
   // ---- modal de edicao do player ----
   var devModalId = null;
   var devModalOrig = null;
+  var dmEditMode = false;
+  var dmDev = null;
 
   function openDevModal(id) {
     devModalId = id;
+    dmEditMode = false;
     $('devModal').classList.remove('hidden');
     $('devModalBody').innerHTML = '<p class="muted">carregando…</p>';
-    $('dmSave').disabled = false;
+    $('dmSave').disabled = true;
     Promise.all([
       api('/api/devices/' + id),
-      api('/api/devices/' + id + '/activity?limit=5').catch(function () { return { activity: null }; }),
+      api('/api/devices/' + id + '/activity?limit=6').catch(function () { return { activity: null }; }),
+      api('/api/devices/' + id + '/commands?limit=40').catch(function () { return { commands: [] }; }),
+      api('/api/devices/' + id + '/screenshots').catch(function () { return { screenshots: [] }; }),
+      api('/api/devices/' + id + '/comm-log?days=30').catch(function () { return { comm_log: [] }; }),
     ]).then(function (res) {
-      renderDevModal(res[0].device, res[1].activity);
+      dmDev = res[0].device;
+      renderDevModal(res[0].device, res[1].activity, res[2].commands, res[3].screenshots, res[4].comm_log);
     }).catch(function (e) {
       $('devModalBody').innerHTML = '<p class="muted">erro: ' + esc(e.message) + '</p>';
     });
   }
 
-  function renderDevModal(dev, activity) {
+  function dmSec(title, inner, span2) {
+    return '<div class="dmsec' + (span2 ? ' dmspan2' : '') + '"><h3>' + title + '</h3>' + inner + '</div>';
+  }
+  function fmtDT(s) {
+    if (!s) return '—';
+    var d = new Date(s.replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? '' : 'Z'));
+    return isNaN(d) ? s : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function renderDevModal(dev, activity, commands, shots, commLog) {
+    $('dmTitle').innerHTML = statusDot(dev) + esc(dev.name || dev.serial);
     var eff = dev.effective_playlist;
     var body = $('devModalBody');
-    body.innerHTML = '';
 
-    var h = document.createElement('div');
-    h.innerHTML = statusDot(dev) + '<b style="font-size:15px">' + esc(dev.name || '(sem nome)') + '</b> ' +
-      '<span class="muted">' + (deviceOnline(dev) ? 'online' : 'offline · ' + fmtAgo(dev.last_seen)) + '</span>';
-    body.appendChild(h);
-
-    var bar = document.createElement('div'); bar.style.margin = '12px 0';
-    bar.innerHTML = pbarHtml(dev);
-    body.appendChild(bar);
-
-    var dl = document.createElement('dl');
-    dl.innerHTML =
-      row('ID', dev.id) +
+    // 1. info / status  (+ form de edição, escondido até "Editar")
+    var infoRows =
       row('Serial', '<code>' + esc(dev.serial) + '</code>') +
       row('Hardware', '<span class="muted">' + esc(dev.hardware_id || '—') + '</span>') +
       row('Tipo', ptypeIcon(dev.player_type) + ' ' + esc(dev.player_type)) +
-      row('Situação', deviceOnline(dev) ? 'online' : 'offline') +
-      row('Último contato', fmtAgo(dev.last_seen)) +
+      row('Situação', deviceOnline(dev) ? '<b style="color:#5fd08a">online</b>' : 'offline · ' + fmtAgo(dev.last_seen)) +
       row('Versão alvo', (eff ? 'v' + eff.version + ' — ' + esc(eff.name) : '—')) +
-      row('Versão no player', (dev.last_version != null ? 'v' + dev.last_version : '—') +
+      row('No player', (dev.last_version != null ? 'v' + dev.last_version : '—') +
         (dev.last_version_at ? ' <span class="muted">(' + fmtAgo(dev.last_version_at) + ')</span>' : '')) +
-      row('Capacidades', '<span class="muted">' + esc(dev.capabilities || '—') + '</span>');
-    body.appendChild(dl);
+      row('Playlist efetiva', eff ? esc(eff.name) + ' <span class="muted">(' + (eff.source === 'group' ? 'do grupo' : 'própria') + ')</span>' : 'nenhuma');
+    var info = '<div style="margin-bottom:8px">' + pbarHtml(dev) + '</div><dl>' + infoRows + '</dl>' +
+      '<div id="dmForm" class="hidden" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">' +
+        '<label>Nome</label><input id="dmName">' +
+        '<label>Grupo</label><span id="dmGroupWrap"></span>' +
+        '<label>Playlist própria (vazio = herda do grupo)</label><span id="dmPlWrap"></span>' +
+      '</div>';
 
-    var form = document.createElement('div');
-    form.innerHTML =
-      '<label>Nome</label><input id="dmName">' +
-      '<label>Grupo</label><span id="dmGroupWrap"></span>' +
-      '<label>Playlist própria (vazio = herda do grupo)</label><span id="dmPlWrap"></span>' +
-      '<div class="muted" style="margin-top:6px">Efetiva agora: <b>' +
-        (eff ? esc(eff.name) + ' (v' + eff.version + ', ' + (eff.source === 'group' ? 'do grupo' : 'própria') + ')' : 'nenhuma') +
-      '</b></div>';
-    body.appendChild(form);
+    // 2. captura de tela
+    var last = shots && shots[0];
+    var capBlock =
+      (last
+        ? '<img class="dmshot" src="' + esc(last.url) + '" onclick="window.open(this.src)"><div class="muted" style="font-size:11px;margin-top:4px">' +
+          fmtDT(last.taken_at) + ' · ' + (last.source === 'manual' ? 'manual' : 'automática') + '</div>'
+        : '<p class="muted" style="font-size:12px">nenhuma captura ainda' +
+          (dev.player_type === 'android' ? '' : ' (captura só no player Android)') + '</p>') +
+      '<div class="row" style="margin-top:8px"><button class="dmcmd" data-cmd="screenshot">📸 Capturar agora</button></div>';
+
+    // 3. intervalo de captura
+    var si = dev.screenshot_interval || 30;
+    var intBlock = '<div class="row" style="gap:6px">' +
+      [1, 5, 10, 30, 60].map(function (m) {
+        return '<span class="dmpill' + (m === si ? ' on' : '') + '" data-shotint="' + m + '">' + m + ' min</span>';
+      }).join('') + '</div>' +
+      '<p class="muted" style="font-size:11px;margin-top:6px">O player Android tira um print a cada esse tempo.</p>';
+
+    // 4. histórico de capturas (7 dias, agrupado por dia)
+    var byDay = {};
+    (shots || []).forEach(function (s) {
+      var d = (s.taken_at || '').slice(0, 10);
+      (byDay[d] = byDay[d] || []).push(s);
+    });
+    var histShots = Object.keys(byDay).sort().reverse().map(function (d) {
+      return '<div style="margin-bottom:8px"><div class="muted" style="font-size:11px">' + fmtDateBr(d) + '</div>' +
+        '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">' +
+        byDay[d].slice(0, 24).map(function (s) {
+          return '<img class="dmthumb" src="' + esc(s.url) + '" title="' + fmtDT(s.taken_at) + '" onclick="window.open(this.src)">';
+        }).join('') + '</div></div>';
+    }).join('') || '<p class="muted" style="font-size:12px">sem capturas nos últimos 7 dias.</p>';
+
+    // 5. comandos remotos
+    var cmdBtns = [
+      ['ping', '📡 Verificar comunicação'],
+      ['restart', '🔄 Reiniciar'],
+      ['clear_cache', '🧹 Limpar cache'],
+      ['unassign_playlist', '⛔ Remover playlist'],
+      ['screenshot', '📸 Capturar tela'],
+    ].map(function (c) { return '<button class="dmcmd" data-cmd="' + c[0] + '">' + c[1] + '</button>'; }).join(' ');
+    var cmdLog = '<div class="dmlogwrap"><table><thead><tr><th>comando</th><th>status</th><th>retorno</th><th>quando</th><th>por</th></tr></thead><tbody>' +
+      (commands || []).map(function (c) {
+        var col = c.status === 'ok' ? '#5fd08a' : c.status === 'error' ? '#e6cf7a' : 'var(--mut)';
+        return '<tr><td>' + esc(c.type) + '</td><td style="color:' + col + '">' + c.status + '</td><td>' +
+          esc(c.result || '') + '</td><td class="muted">' + fmtDT(c.done_at || c.created_at) + '</td><td class="muted">' + esc(c.created_by || '—') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+
+    // 6. log de comunicação (30 dias) — agrupa por ciclo (mesmo "at")
+    var ci = dev.comm_interval || 60;
+    var cyc = {};
+    (commLog || []).forEach(function (r) { (cyc[r.at] = cyc[r.at] || []).push(r); });
+    var commRows = Object.keys(cyc).sort().reverse().slice(0, 120).map(function (at) {
+      var arr = cyc[at].sort(function (a, b) { return a.attempt - b.attempt; });
+      var oks = arr.filter(function (a) { return a.ok; }).length;
+      var dots = arr.map(function (a) {
+        return '<span title="tent. ' + a.attempt + (a.ms != null ? ' · ' + a.ms + 'ms' : '') + (a.detail ? ' · ' + esc(a.detail) : '') +
+          '" style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:2px;background:' + (a.ok ? '#2c6' : '#c44') + '"></span>';
+      }).join('');
+      return '<tr><td class="muted">' + fmtDT(at) + '</td><td>' + dots + '</td><td style="color:' + (oks === 4 ? '#5fd08a' : oks ? '#e6cf7a' : '#e8776b') + '">' + oks + '/4</td></tr>';
+    }).join('') || '<tr><td colspan="3" class="muted">sem registros ainda.</td></tr>';
+    var commBlock = '<div class="row" style="gap:6px;align-items:center;margin-bottom:6px">A cada ' +
+      '<select id="dmCommInt" style="width:auto">' + [15, 30, 60, 120, 240].map(function (m) {
+        return '<option value="' + m + '"' + (m === ci ? ' selected' : '') + '>' + m + ' min</option>';
+      }).join('') + '</select> · 4 tentativas por ciclo</div>' +
+      '<div class="dmlogwrap"><table><thead><tr><th>ciclo</th><th>tentativas</th><th>ok</th></tr></thead><tbody>' + commRows + '</tbody></table></div>';
+
+    // 7. histórico de mudanças
+    var histChg = (activity == null)
+      ? '<p class="muted" style="font-size:12px">indisponível — reinicie o servidor.</p>'
+      : (!activity.length ? '<p class="muted" style="font-size:12px">nada registrado.</p>'
+        : '<ul class="histlist">' + activity.map(function (a) {
+            return '<li>' + esc(a.detail || a.action) + '<br><span class="who">' + esc(a.actor_email || 'sistema') + ' · ' + fmtAgo(a.created_at) + '</span></li>';
+          }).join('') + '</ul>');
+
+    body.innerHTML =
+      dmSec('Status', info) +
+      dmSec('Captura de tela', capBlock) +
+      dmSec('Intervalo de captura', intBlock) +
+      dmSec('Histórico de capturas (7 dias)', histShots, true) +
+      dmSec('Comandos remotos', cmdBtns + '<div style="margin-top:10px">' + cmdLog + '</div>', true) +
+      dmSec('Log de comunicação (30 dias)', commBlock, true) +
+      dmSec('Histórico de mudanças', histChg, true);
+
+    // wire form
     $('dmName').value = dev.name || '';
     var gsel = groupSelect(dev.group_id); gsel.id = 'dmGroupSel'; $('dmGroupWrap').appendChild(gsel);
     var psel = playlistSelect(dev.own_playlist ? dev.own_playlist.id : ''); psel.id = 'dmPlSel'; $('dmPlWrap').appendChild(psel);
-
     devModalOrig = {
       name: dev.name || '',
       group_id: dev.group_id ? String(dev.group_id) : '',
       own_pl: dev.own_playlist ? String(dev.own_playlist.id) : '',
     };
+    $('dmForm').classList.toggle('hidden', !dmEditMode);
+    $('dmSave').disabled = !dmEditMode;
+    $('dmEdit').classList.toggle('on', dmEditMode);
 
-    var hist = document.createElement('div');
-    if (activity == null) {
-      hist.innerHTML = '<h3 class="muted" style="font-size:13px;margin:14px 0 4px">Histórico</h3>' +
-        '<p class="muted" style="font-size:12px">indisponível — reinicie o servidor (npm start) para ativar a trilha de auditoria.</p>';
-    } else if (!activity.length) {
-      hist.innerHTML = '<h3 class="muted" style="font-size:13px;margin:14px 0 4px">Histórico</h3>' +
-        '<p class="muted" style="font-size:12px">nenhuma mudança registrada ainda.</p>';
-    } else {
-      hist.innerHTML = '<h3 class="muted" style="font-size:13px;margin:14px 0 4px">Últimas ' + activity.length + ' mudanças</h3>' +
-        '<ul class="histlist">' + activity.map(function (a) {
-          return '<li>' + esc(a.detail || a.action) +
-            '<br><span class="who">' + esc(a.actor_email || 'sistema') + ' · ' + fmtAgo(a.created_at) +
-            (a.target_type === 'group' ? ' · grupo' : '') + '</span></li>';
-        }).join('') + '</ul>';
-    }
-    body.appendChild(hist);
+    // wire pills / commands / comm interval
+    body.querySelectorAll('[data-shotint]').forEach(function (p) {
+      p.onclick = function () {
+        jpost('/api/devices/' + dev.id, { screenshot_interval: Number(p.dataset.shotint) }, 'PATCH')
+          .then(function () { log('captura a cada ' + p.dataset.shotint + ' min'); openDevModal(dev.id); })
+          .catch(function (e) { log('intervalo: ' + (e.body && e.body.error || e.message)); });
+      };
+    });
+    body.querySelectorAll('[data-cmd]').forEach(function (b) {
+      b.onclick = function () { sendDevCommand(dev.id, b.dataset.cmd, b); };
+    });
+    var ciSel = $('dmCommInt');
+    if (ciSel) ciSel.onchange = function () {
+      jpost('/api/devices/' + dev.id, { comm_interval: Number(this.value) }, 'PATCH')
+        .then(function () { log('log de comunicação a cada ' + ciSel.value + ' min'); })
+        .catch(function (e) { log('comm_interval: ' + (e.body && e.body.error || e.message)); });
+    };
   }
 
-  $('dmClose').onclick = function () { devModalId = null; $('devModal').classList.add('hidden'); };
+  function sendDevCommand(id, type, btn) {
+    btn.classList.remove('ok', 'err'); btn.disabled = true;
+    var orig = btn.textContent; btn.textContent = '⏳ ' + orig;
+    jpost('/api/devices/' + id + '/commands', { type: type }).then(function (d) {
+      var cmd = d.command;
+      log('comando "' + type + '" enviado (#' + cmd.id + ')');
+      if (cmd.status === 'ok') { finishCmd(btn, orig, true, cmd.result); return; }
+      if (cmd.status === 'error') { finishCmd(btn, orig, false, cmd.result); return; }
+      // pendente: aguarda o player dar ack (poll até 30s)
+      var tries = 0;
+      var t = setInterval(function () {
+        tries++;
+        api('/api/devices/' + id + '/commands?limit=20').then(function (r) {
+          var c = (r.commands || []).find(function (x) { return x.id === cmd.id; });
+          if (c && c.status !== 'pending') {
+            clearInterval(t); finishCmd(btn, orig, c.status === 'ok', c.result);
+            openDevModal(id);
+          } else if (tries >= 15) {
+            clearInterval(t); finishCmd(btn, orig, false, 'sem resposta do player (timeout)');
+          }
+        }).catch(function () {});
+      }, 2000);
+    }).catch(function (e) {
+      finishCmd(btn, orig, false, e.body && e.body.error || e.message);
+    });
+  }
+  function finishCmd(btn, orig, ok, result) {
+    btn.disabled = false; btn.textContent = orig;
+    btn.classList.add(ok ? 'ok' : 'err');
+    btn.title = (ok ? '✓ ' : '✗ ') + (result || '');
+    log('comando ' + (ok ? 'OK' : 'FALHOU') + ': ' + (result || ''));
+  }
+
+  $('dmClose').onclick = function () { devModalId = null; dmEditMode = false; $('devModal').classList.add('hidden'); };
+  $('dmEdit').onclick = function () {
+    dmEditMode = !dmEditMode;
+    $('dmForm').classList.toggle('hidden', !dmEditMode);
+    $('dmSave').disabled = !dmEditMode;
+    this.classList.toggle('on', dmEditMode);
+  };
+  $('dmDelete').onclick = function () {
+    if (!dmDev) return;
+    if (!confirm('Apagar o device ' + dmDev.serial + (dmDev.name ? ' (' + dmDev.name + ')' : '') +
+      '? Se o player ainda existir, ele pareia de novo como device novo.')) return;
+    api('/api/devices/' + dmDev.id, { method: 'DELETE' }).then(function () {
+      log('device ' + dmDev.serial + ' apagado');
+      $('devModal').classList.add('hidden'); devModalId = null;
+      loadGroups().then(loadDevices);
+    }).catch(function (e) { log('apagar device: ' + e.message); });
+  };
   $('dmSave').onclick = function () {
     if (!devModalId || !devModalOrig) return;
     var id = devModalId;
@@ -2502,10 +2645,11 @@
       });
       acted.push('playlist');
     }
-    if (!acted.length) { log('nada mudou'); return; }
+    if (!acted.length) { dmEditMode = false; $('dmForm').classList.add('hidden'); $('dmSave').disabled = true; $('dmEdit').classList.remove('on'); return; }
     $('dmSave').disabled = true;
     chain.then(function () {
       log('player #' + id + ' salvo (' + acted.join(', ') + ')');
+      dmEditMode = false;
       loadGroups().then(loadDevices);
       openDevModal(id);
     }).catch(function (e) { log('salvar: ' + e.message); $('dmSave').disabled = false; });

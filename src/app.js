@@ -78,6 +78,9 @@ function createApp() {
   // Arquivos para download (APK do player Android, etc.) — <media>/downloads/.
   app.use('/downloads', express.static(path.join(config.mediaDir, 'downloads'), { index: false }));
 
+  // Capturas de tela dos devices — <media>/screenshots/.
+  app.use('/screenshots', express.static(path.join(config.mediaDir, 'screenshots'), { index: false }));
+
   // Player web (kiosk) e mini painel admin — HTML estatico; a autenticacao real
   // acontece nas chamadas /api que cada pagina faz.
   app.use('/player', express.static(path.join(__dirname, '..', 'public', 'player')));

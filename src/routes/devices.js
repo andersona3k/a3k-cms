@@ -6,6 +6,7 @@ const { requireAuth, writeGuard } = require('../auth/middleware');
 const { PLAYER_TYPES } = require('../adapters');
 const { buildManifest } = require('../lib/manifest');
 const { logActivity, recentForDevice } = require('../lib/activity');
+const { CMD_TYPES, SHOT_INTERVALS } = require('../lib/deviceMgmt');
 
 function groupName(db, id) {
   if (!id) return null;
@@ -108,6 +109,15 @@ router.patch('/:id', (req, res) => {
   }
   const newGroup = b.group_id !== undefined ? (b.group_id || null) : undefined;
   if (newGroup !== undefined) { sets.push('group_id = ?'); vals.push(newGroup); }
+  if (b.screenshot_interval !== undefined) {
+    const v = Number(b.screenshot_interval);
+    if (!SHOT_INTERVALS.includes(v)) return res.status(400).json({ error: 'screenshot_interval invalido (1/5/10/30/60)' });
+    sets.push('screenshot_interval = ?'); vals.push(v);
+  }
+  if (b.comm_interval !== undefined) {
+    const v = Math.max(1, Math.min(1440, Number(b.comm_interval) || 60));
+    sets.push('comm_interval = ?'); vals.push(v);
+  }
 
   if (!sets.length) return res.status(400).json({ error: 'nada para atualizar' });
   sets.push(`updated_at = datetime('now')`);
@@ -194,6 +204,87 @@ router.get('/:id/activity', (req, res) => {
       limit: req.query.limit,
     }),
   });
+});
+
+// ---- gestão remota (comandos / capturas / log de comunicação) ----
+
+// POST /api/devices/:id/commands  { type, params? }
+router.post('/:id/commands', (req, res) => {
+  const db = getDb();
+  const device = scoped(db, req.params.id, req.auth.companyId);
+  if (!device) return res.status(404).json({ error: 'device nao encontrado' });
+  const type = String((req.body && req.body.type) || '');
+  if (!CMD_TYPES.includes(type)) return res.status(400).json({ error: 'type invalido' });
+  const params = req.body && req.body.params ? JSON.stringify(req.body.params) : null;
+  const actor = req.auth.email || null;
+
+  // unassign_playlist resolve na hora (server-side); os demais viram fila p/ o player
+  if (type === 'unassign_playlist') {
+    db.prepare(
+      `DELETE FROM assignments WHERE company_id = ? AND target_type = 'device' AND target_id = ?`
+    ).run(req.auth.companyId, device.id);
+    const info = db.prepare(
+      `INSERT INTO device_commands (company_id, device_id, type, params, status, result, created_by, done_at)
+       VALUES (?, ?, 'unassign_playlist', NULL, 'ok', 'playlist desvinculada', ?, datetime('now'))`
+    ).run(req.auth.companyId, device.id, actor);
+    logActivity(db, {
+      companyId: req.auth.companyId, targetType: 'device', targetId: device.id, action: 'command',
+      detail: `${device.name || device.serial}: remover playlist`, actor: req.auth,
+    });
+    return res.status(201).json({ command: db.prepare('SELECT * FROM device_commands WHERE id = ?').get(Number(info.lastInsertRowid)) });
+  }
+
+  const info = db.prepare(
+    `INSERT INTO device_commands (company_id, device_id, type, params, created_by)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(req.auth.companyId, device.id, type, params, actor);
+  logActivity(db, {
+    companyId: req.auth.companyId, targetType: 'device', targetId: device.id, action: 'command',
+    detail: `${device.name || device.serial}: ${type}`, actor: req.auth,
+  });
+  res.status(201).json({ command: db.prepare('SELECT * FROM device_commands WHERE id = ?').get(Number(info.lastInsertRowid)) });
+});
+
+// GET /api/devices/:id/commands?limit=50
+router.get('/:id/commands', (req, res) => {
+  const db = getDb();
+  const device = scoped(db, req.params.id, req.auth.companyId);
+  if (!device) return res.status(404).json({ error: 'device nao encontrado' });
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+  res.json({
+    commands: db.prepare(
+      `SELECT id, type, status, result, created_by, created_at, done_at
+         FROM device_commands WHERE device_id = ? ORDER BY id DESC LIMIT ?`
+    ).all(device.id, limit),
+  });
+});
+
+// GET /api/devices/:id/screenshots  — últimos 7 dias
+router.get('/:id/screenshots', (req, res) => {
+  const db = getDb();
+  const device = scoped(db, req.params.id, req.auth.companyId);
+  if (!device) return res.status(404).json({ error: 'device nao encontrado' });
+  res.json({
+    screenshots: db.prepare(
+      `SELECT id, url, bytes, source, taken_at FROM device_screenshots
+        WHERE device_id = ? AND taken_at >= datetime('now', '-7 days')
+        ORDER BY id DESC LIMIT 400`
+    ).all(device.id),
+  });
+});
+
+// GET /api/devices/:id/comm-log?days=30
+router.get('/:id/comm-log', (req, res) => {
+  const db = getDb();
+  const device = scoped(db, req.params.id, req.auth.companyId);
+  if (!device) return res.status(404).json({ error: 'device nao encontrado' });
+  const days = Math.min(60, Math.max(1, Number(req.query.days) || 30));
+  const rows = db.prepare(
+    `SELECT at, attempt, ok, ms, detail FROM device_comm_log
+      WHERE device_id = ? AND at >= datetime('now', ?)
+      ORDER BY id DESC LIMIT 2000`
+  ).all(device.id, `-${days} days`);
+  res.json({ comm_log: rows });
 });
 
 // DELETE /api/devices/:id  — remove o device (e seu assignment proprio).

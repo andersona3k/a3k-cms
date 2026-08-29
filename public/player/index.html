@@ -578,6 +578,8 @@
     render();
   }
 
+  var _commTimer = null, _commInterval = 60, _shotInterval = 30;
+
   function heartbeat() {
     if (!device.token) return;
     fetch(API + '/api/devices/' + device.id + '/heartbeat', {
@@ -587,7 +589,87 @@
         playlist_version: currentVersion < 0 ? 0 : currentVersion,
         capabilities: caps(),
       }),
+    }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d) return;
+      if (d.comm_interval && d.comm_interval !== _commInterval) { _commInterval = d.comm_interval; scheduleCommLog(); }
+      if (d.screenshot_interval) _shotInterval = d.screenshot_interval;
+      if (Array.isArray(d.commands) && d.commands.length) d.commands.forEach(runCommand);
     }).catch(function () {});
+  }
+
+  // ---- comandos remotos ----
+  function ackCommand(id, ok, result) {
+    fetch(API + '/api/devices/' + device.id + '/commands/' + id + '/ack', {
+      method: 'POST', headers: Object.assign({ 'content-type': 'application/json' }, auth()),
+      body: JSON.stringify({ status: ok ? 'ok' : 'error', result: result == null ? null : String(result) }),
+    }).catch(function () {});
+  }
+  var _cmdDone = {};
+  function runCommand(c) {
+    if (_cmdDone[c.id]) return;
+    _cmdDone[c.id] = 1;
+    try {
+      if (c.type === 'ping') {
+        ackCommand(c.id, true, 'v' + currentVersion + ' · ' + (playlist.length) + '/' + allItems.length + ' no ar');
+      } else if (c.type === 'unassign_playlist') {
+        ackCommand(c.id, true, 'ok'); poll();
+      } else if (c.type === 'restart') {
+        ackCommand(c.id, true, 'reiniciando'); setTimeout(function () { location.reload(); }, 800);
+      } else if (c.type === 'clear_cache') {
+        var done = function (extra) {
+          ackCommand(c.id, true, 'cache limpo' + (extra ? ' ' + extra : ''));
+          setTimeout(function () { location.reload(); }, 800);
+        };
+        try { if (window.A3K && window.A3K.clearCache) window.A3K.clearCache(); } catch (e) {}
+        if (self.indexedDB) {
+          var del = indexedDB.deleteDatabase('a3k-player');
+          del.onsuccess = del.onerror = del.onblocked = function () { done('(idb)'); };
+        } else { done(''); }
+      } else if (c.type === 'screenshot') {
+        if (window.A3K && window.A3K.captureUpload) {
+          // nativo faz captura + upload; devolve via window.__a3kShot(cmdId,jsonResult)
+          window.__a3kShot = function (cmdId, json) {
+            var o = {}; try { o = JSON.parse(json); } catch (e) {}
+            ackCommand(cmdId, !!o.ok, o.ok ? (o.url || 'capturado') : (o.error || 'falha'));
+          };
+          window.A3K.captureUpload(c.id, API + '/api/devices/' + device.id + '/screenshots?source=manual', device.token);
+        } else {
+          ackCommand(c.id, false, 'captura só no player Android');
+        }
+      } else {
+        ackCommand(c.id, false, 'tipo desconhecido: ' + c.type);
+      }
+    } catch (e) { ackCommand(c.id, false, e && e.message || 'erro'); }
+  }
+
+  // ---- log de comunicação: a cada _commInterval min, 4 tentativas ----
+  function scheduleCommLog() {
+    clearInterval(_commTimer);
+    _commTimer = setInterval(runCommLogCycle, Math.max(1, _commInterval) * 60000);
+  }
+  function runCommLogCycle() {
+    if (!device.token) return;
+    var attempts = [];
+    var i = 0;
+    function one() {
+      if (i >= 4) {
+        fetch(API + '/api/devices/' + device.id + '/comm-log', {
+          method: 'POST', headers: Object.assign({ 'content-type': 'application/json' }, auth()),
+          body: JSON.stringify({ at: new Date().toISOString(), attempts: attempts }),
+        }).catch(function () {});
+        return;
+      }
+      var n = i + 1, t0 = Date.now();
+      fetch(API + '/api/devices/' + device.id + '/comm-check', { headers: auth(), cache: 'no-store' })
+        .then(function (r) {
+          attempts.push({ n: n, ok: r.ok, ms: Date.now() - t0, detail: r.ok ? ('HTTP ' + r.status) : ('HTTP ' + r.status) });
+        })
+        .catch(function (e) {
+          attempts.push({ n: n, ok: false, ms: Date.now() - t0, detail: (e && e.message) || 'sem rede' });
+        })
+        .then(function () { i++; setTimeout(one, 400); });
+    }
+    one();
   }
 
   function poll() {
@@ -619,6 +701,8 @@
         setInterval(poll, POLL_MS);
         setInterval(heartbeat, HEARTBEAT_MS);
         setInterval(function () { recomputeActive(false); }, 20000);
+        scheduleCommLog();
+        setTimeout(runCommLogCycle, 8000);   // um ciclo logo no início
         window.addEventListener('online', poll);
       })
       .catch(function (e) {
