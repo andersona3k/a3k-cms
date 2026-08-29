@@ -1,0 +1,25 @@
+[Unit]
+Description=A3K CMS (digital signage)
+Documentation=https://github.com/andersona3k/a3k-cms
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=a3k
+Group=a3k
+WorkingDirectory=/opt/a3k-cms
+EnvironmentFile=/opt/a3k-cms/.env
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=3
+
+# --- hardening ---
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/a3k-cms/data /opt/a3k-cms/media
+
+[Install]
+WantedBy=multi-user.target

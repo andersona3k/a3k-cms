@@ -197,6 +197,14 @@ npm start                 # sobe em http://localhost:3000
 O `seed` cria o admin como **superadmin**. Usuarios comuns entram por `/api/users`
 (criados por quem tem `users:manage`) e recebem um `role_id`.
 
+### Produção (VM Ubuntu + systemd + nginx)
+
+Scripts e runbook em [`deploy/`](deploy/README.md): `setup.sh` (bootstrap da VM,
+uma vez), `deploy.sh` (git pull + `npm ci` + migrate + restart), `backup.sh`
+(sqlite `.backup` + tar do `media/`, via cron). Config em `/opt/a3k-cms/.env`
+(base: `.env.production.example`). CI em `.github/workflows/ci.yml` roda os testes
+a cada push. Na VM externa, `certbot --nginx` adiciona o TLS.
+
 ## API
 
 ### Admin (Bearer JWT do login)

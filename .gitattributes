@@ -1,0 +1,6 @@
+# Scripts e configs consumidos em Linux: sempre LF, mesmo com checkout no Windows.
+*.sh            text eol=lf
+deploy/*        text eol=lf
+*.service       text eol=lf
+.env.example    text eol=lf
+.env.production.example text eol=lf
