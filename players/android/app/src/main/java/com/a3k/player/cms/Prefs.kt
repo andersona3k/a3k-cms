@@ -37,8 +37,9 @@ object Prefs {
         sp(c).edit().remove(K_CODE).apply()
     }
 
-    /** F2: rotacao manual em passos de 90° horario. -1 = sem override (usa K_ORIENT). */
-    fun manualRotation(c: Context): Int = sp(c).getInt(K_MANUAL_ROT, -1)
+    /** F2: rotacao de CONTEUDO em passos de 90° horario (0..3), aplicada na View
+     *  do WebView (nao no requestedOrientation — evita brigar com o sensor/ROM). */
+    fun manualRotation(c: Context): Int = sp(c).getInt(K_MANUAL_ROT, 0).let { ((it % 4) + 4) % 4 }
 
     fun setManualRotation(c: Context, steps: Int) {
         sp(c).edit().putInt(K_MANUAL_ROT, ((steps % 4) + 4) % 4).commit()
@@ -53,19 +54,10 @@ object Prefs {
         sp(c).edit().putBoolean(K_STOPPED, stopped).commit()
     }
 
-    fun requestedOrientation(c: Context): Int {
-        val m = manualRotation(c)
-        if (m in 0..3) return when (m) {
-            1 -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            2 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-            3 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
-            else -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        }
-        return when (orientation(c)) {
-            "portrait" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            "auto" -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
-            else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
+    fun requestedOrientation(c: Context): Int = when (orientation(c)) {
+        "portrait" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        "auto" -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+        else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
     }
 
     /**

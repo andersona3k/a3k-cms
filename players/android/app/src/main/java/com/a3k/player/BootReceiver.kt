@@ -13,15 +13,12 @@ class BootReceiver : BroadcastReceiver() {
         val action = intent?.action ?: return
         Log.i(TAG, "boot: $action")
         if (!Prefs.isConfigured(context)) return
-        if (Prefs.isStopped(context)) { Log.i(TAG, "player parado pelo operador (F1) — nao inicia"); return }
+        // Reiniciar o aparelho recomeca do zero: se o F1 tinha parado, limpa a
+        // flag e sobe o player sozinho (o "stopped" so vale dentro da sessao).
+        if (Prefs.isStopped(context)) Prefs.setStopped(context, false)
 
         Watchdog.arm(context)
-
-        val launch = Intent(context, PlayerActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-        runCatching { context.startActivity(launch) }
-            .onFailure { Log.w(TAG, "startActivity no boot falhou; watchdog assume", it) }
+        Autostart.launch(context)
     }
 
     companion object {

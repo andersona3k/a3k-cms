@@ -55,6 +55,8 @@ class PlayerActivity : AppCompatActivity() {
 
     // F1: overlay de senha para sair
     private var stopOverlay: View? = null
+    private var stopInput: EditText? = null
+    private var stopErr: TextView? = null
     private val stopTimeout = Runnable { dismissStopPrompt() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -144,6 +146,28 @@ class PlayerActivity : AppCompatActivity() {
         webView = wv
         wv.loadUrl(Prefs.playerUrl(this))
         Log.i(TAG, "carregando ${Prefs.playerUrl(this)}")
+        container.post { applyManualRotation() }
+    }
+
+    /**
+     * F2: rotaciona a VIEW do WebView (nao o requestedOrientation). Passo de 90°
+     * horario, deterministico, imune ao sensor/ROM. Para 90/270 troca w<->h e
+     * centraliza. Persistente (Prefs.manual_rot).
+     */
+    private fun applyManualRotation() {
+        val wv = webView ?: return
+        val steps = Prefs.manualRotation(this)
+        val w = container.width
+        val h = container.height
+        if (w == 0 || h == 0) { container.post { applyManualRotation() }; return }
+        wv.layoutParams = if (steps % 2 == 1) {
+            FrameLayout.LayoutParams(h, w).apply { gravity = Gravity.CENTER }
+        } else {
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        }
+        wv.rotation = steps * 90f
+        // informa o player web (opcional; para log/diagnostico do lado do HTML)
+        wv.evaluateJavascript("window.__a3kDeviceRotation=${steps * 90};", null)
     }
 
     private fun onCornerTap(ev: MotionEvent) {
@@ -187,10 +211,9 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // reaplica a orientacao a cada retomada: mudar no Setup e voltar ja vale
-        // (a Activity e singleTask e nem sempre passa pelo onCreate de novo).
         val want = Prefs.requestedOrientation(this)
         if (requestedOrientation != want) requestedOrientation = want
+        container.post { applyManualRotation() }
         Watchdog.arm(this)
         Watchdog.beat()
         ui.removeCallbacks(beat)
@@ -202,6 +225,7 @@ class PlayerActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         requestedOrientation = Prefs.requestedOrientation(this)
         webView?.loadUrl(Prefs.playerUrl(this))
+        container.post { applyManualRotation() }
     }
 
     override fun onPause() {
@@ -217,10 +241,22 @@ class PlayerActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    // Teclado conectado. Enquanto o overlay de senha esta aberto, F1/F2 nao agem
-    // (as teclas vao para o campo). BACK/MENU sempre engolidos.
+    // Teclado conectado. Com o overlay de senha aberto: Enter/OK confirma,
+    // Esc/Back/Cancelar fecha e volta a reproduzir; as demais teclas digitam.
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN && stopOverlay == null) {
+        if (stopOverlay != null) {
+            if (event.action == KeyEvent.ACTION_UP) {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_BACK -> { dismissStopPrompt(); return true }
+                    KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_DPAD_CENTER -> {
+                        submitStopPassword(); return true
+                    }
+                }
+            }
+            resetStopTimer()
+            return super.dispatchKeyEvent(event)
+        }
+        if (event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_F1 -> { showStopPrompt(); return true }
                 KeyEvent.KEYCODE_F2 -> { rotate90cw(); return true }
@@ -234,11 +270,10 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
 
-    /** F2: gira a tela 90° no sentido horario a cada toque. */
+    /** F2: gira o conteudo 90° horario a cada toque (view-based, persistente). */
     private fun rotate90cw() {
-        val cur = Prefs.manualRotation(this).let { if (it in 0..3) it else 0 }
-        Prefs.setManualRotation(this, cur + 1)
-        requestedOrientation = Prefs.requestedOrientation(this)
+        Prefs.setManualRotation(this, Prefs.manualRotation(this) + 1)
+        applyManualRotation()
         Toast.makeText(this, "Tela girada", Toast.LENGTH_SHORT).show()
     }
 
@@ -288,34 +323,41 @@ class PlayerActivity : AppCompatActivity() {
         card.addView(rowBtns)
         root.addView(card)
 
-        fun resetTimer() {
-            ui.removeCallbacks(stopTimeout)
-            ui.postDelayed(stopTimeout, 15_000)
-        }
-        input.doAfterTextChanged { resetTimer() }
-        root.setOnKeyListener { _, _, _ -> resetTimer(); false }
+        input.doAfterTextChanged { resetStopTimer() }
+        input.setOnEditorActionListener { _, _, _ -> submitStopPassword(); true }
         cancel.setOnClickListener { dismissStopPrompt() }
-        ok.setOnClickListener {
-            if (input.text.toString() == STOP_PASSWORD) {
-                stopPlayer()
-            } else {
-                err.text = "Senha incorreta"
-                err.visibility = View.VISIBLE
-                input.setText("")
-                resetTimer()
-            }
-        }
+        ok.setOnClickListener { submitStopPassword() }
 
         container.addView(root)
         stopOverlay = root
+        stopInput = input
+        stopErr = err
         input.requestFocus()
-        resetTimer()
+        resetStopTimer()
+    }
+
+    private fun resetStopTimer() {
+        ui.removeCallbacks(stopTimeout)
+        ui.postDelayed(stopTimeout, 15_000)
+    }
+
+    private fun submitStopPassword() {
+        val inp = stopInput ?: return
+        if (inp.text.toString() == STOP_PASSWORD) {
+            stopPlayer()
+        } else {
+            stopErr?.apply { text = "Senha incorreta"; visibility = View.VISIBLE }
+            inp.setText("")
+            resetStopTimer()
+        }
     }
 
     private fun dismissStopPrompt() {
         ui.removeCallbacks(stopTimeout)
         stopOverlay?.let { container.removeView(it) }
         stopOverlay = null
+        stopInput = null
+        stopErr = null
         webView?.requestFocus()
     }
 

@@ -11,8 +11,8 @@ android {
         applicationId = "com.a3k.player"
         minSdk = 28
         targetSdk = 34
-        versionCode = 7
-        versionName = "0.1.6"
+        versionCode = 9
+        versionName = "0.1.8"
     }
 
     buildTypes {

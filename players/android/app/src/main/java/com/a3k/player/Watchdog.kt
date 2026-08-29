@@ -54,13 +54,7 @@ object Watchdog {
             val age = SystemClock.elapsedRealtime() - lastAlive
             val stale = lastAlive == 0L || age > STALE_MS
             Log.i(TAG, "check: lastAlive=${lastAlive} age=${age}ms stale=$stale")
-            if (stale) {
-                val launch = Intent(context, PlayerActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                }
-                runCatching { context.startActivity(launch) }
-                    .onFailure { Log.w(TAG, "relaunch falhou", it) }
-            }
+            if (stale) Autostart.launch(context)
         }
     }
 }
