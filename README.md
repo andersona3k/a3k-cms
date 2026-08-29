@@ -298,12 +298,16 @@ public/
                        ar, CINZA = vazia) + tabela (Nome · Tipo Video/Imagem/Mix ·
                        Orientacao · Duracao total · Tamanho (MB, soma dos assets
                        distintos) · Criada · Por · Status Em uso/Planejada/Vencida ·
-                       Vigencia · Acoes Duplicar/Renomear/Suspender/Arquivar/
-                       Remover). Clicar na linha abre #plEditModal: nome editavel
-                       inline (lapis ✎), label "Repositorio", linha de info com o
-                       TAMANHO TOTAL (atualiza ao adicionar) + duracao; itens em
-                       QUADROS/miniaturas numerados, drag p/ reordenar, ✕/⏸/🕐
-                       por item; "+ adicionar conteudo" abre #plAddModal (tela
+                       Vigencia · Acoes = ICONES (⧉ dup · ✎ renomear · ⊘/▶ suspender ·
+                       📥/📤 arquivar · 🗑 remover; tooltip no hover). "Remover"
+                       so habilita se a playlist NAO estiver vinculada a um player
+                       — se estiver, fica disabled + "⚠ em uso" embaixo). Clicar
+                       na linha abre #plEditModal: nome editavel
+                       inline (lapis ✎). Header: [▶ Preview] [💾 Salvar] [✕] a
+                       direita; sem "Apagar playlist" (fica so o 🗑 na lista).
+                       Label "Repositorio", linha de info com o TAMANHO TOTAL
+                       (atualiza ao adicionar) + duracao; itens em QUADROS/
+                       miniaturas numerados, drag p/ reordenar, ✕/⊘/🕐 por item; "+ adicionar conteudo" abre #plAddModal (tela
                        quase cheia): 4 colunas = arvore de pastas (Explorer) |
                        Repositorio (miniaturas QUADRADAS, auto-fill) | meio |
                        Selecao (Repositorio e Selecao dividem metade cada). No

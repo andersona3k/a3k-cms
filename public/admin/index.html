@@ -161,8 +161,9 @@
   #plListTbl tbody tr { cursor:grab; }
   #plListTbl tbody tr:hover { background:#1b2733; }
   .fnode.dragover { outline:2px dashed var(--acc); outline-offset:-2px; background:#1b2c3f; }
-  #plListTbl .rowacts { display:flex; gap:5px; flex-wrap:wrap; }
-  #plListTbl .rowacts button { padding:4px 8px; font-size:11px; }
+  #plListTbl .rowacts { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
+  .iconact { padding:4px 7px; font-size:14px; line-height:1; min-width:28px; }
+  #plListTbl .remwarn { flex-basis:100%; font-size:10px; color:var(--warn); }
   .pstat { font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; white-space:nowrap; }
   .pstat.em_uso   { background:#173a29; color:#5fd08a; }
   .pstat.planejada{ background:#1c2b3b; color:#7fb0e0; }
@@ -469,7 +470,11 @@
   <div class="modalBox">
     <div class="row" style="justify-content:space-between;align-items:center">
       <span id="plEditNameWrap"></span>
-      <button class="ghost" id="plEditClose">fechar</button>
+      <span style="display:flex;gap:6px;align-items:center">
+        <button class="ghost" id="plPreviewBtn" title="Pré-visualizar">▶ Preview</button>
+        <button id="plEditCfgSave" title="Salvar configurações">💾 Salvar</button>
+        <button class="ghost" id="plEditClose" title="Fechar" style="font-size:15px;line-height:1;padding:6px 10px">✕</button>
+      </span>
     </div>
     <p class="muted" id="plEditInfo" style="font-size:12px;margin:2px 0 12px"></p>
     <div class="row" style="align-items:end">
@@ -483,9 +488,6 @@
       <div><label>Repositório</label><select id="plEditFolder"></select></div>
       <div><label>Vigência — início</label><input type="date" id="plEditFrom" /></div>
       <div><label>Vigência — fim</label><input type="date" id="plEditUntil" /></div>
-      <button id="plEditCfgSave">Salvar config.</button>
-      <button class="ghost" id="plPreviewBtn">Preview</button>
-      <button class="danger" id="plDeleteBtn">Apagar playlist</button>
     </div>
     <div class="row" style="justify-content:space-between;margin-top:16px">
       <b style="font-size:13px">Itens da playlist</b>
@@ -1311,22 +1313,31 @@
       tr.onclick = function () { openPlEdit(p.id); };
 
       var acts = document.createElement('div'); acts.className = 'rowacts';
-      var dup = document.createElement('button'); dup.className = 'ghost'; dup.textContent = 'Duplicar';
+      function actBtn(icon, title, cls) {
+        var b = document.createElement('button'); b.className = 'iconact ' + (cls || 'ghost');
+        b.textContent = icon; b.title = title; return b;
+      }
+      var dup = actBtn('⧉', 'Duplicar');
       dup.onclick = function (e) {
         e.stopPropagation();
         api('/api/playlists/' + p.id + '/duplicate', { method: 'POST' })
           .then(function (d) { log('playlist duplicada: "' + d.playlist.name + '"'); loadPlaylists(); })
           .catch(function (err) { log('duplicar: ' + err.message); });
       };
-      var ren = document.createElement('button'); ren.className = 'ghost'; ren.textContent = 'Renomear';
+      var ren = actBtn('✎', 'Renomear');
       ren.onclick = function (e) { e.stopPropagation(); renamePlaylist(p); };
-      var sus = document.createElement('button'); sus.className = 'ghost'; sus.textContent = p.suspended ? 'Retomar' : 'Suspender';
+      var sus = actBtn(p.suspended ? '▶' : '⊘', p.suspended ? 'Retomar' : 'Suspender');
       sus.onclick = function (e) { e.stopPropagation(); patchPl(p.id, { suspended: !p.suspended }, p.suspended ? 'retomada' : 'suspensa'); };
-      var arc = document.createElement('button'); arc.className = 'ghost'; arc.textContent = p.archived ? 'Desarquivar' : 'Arquivar';
+      var arc = actBtn(p.archived ? '📤' : '📥', p.archived ? 'Desarquivar' : 'Arquivar');
       arc.onclick = function (e) { e.stopPropagation(); patchPl(p.id, { archived: !p.archived }, p.archived ? 'desarquivada' : 'arquivada'); };
-      var rem = document.createElement('button'); rem.className = 'danger'; rem.textContent = 'Remover';
-      rem.onclick = function (e) { e.stopPropagation(); removePl(p); };
+      var rem = actBtn('🗑', p.assigned ? 'Não pode remover: vinculada a um player' : 'Remover', 'danger');
+      rem.onclick = function (e) { e.stopPropagation(); if (!p.assigned) removePl(p); };
       acts.appendChild(dup); acts.appendChild(ren); acts.appendChild(sus); acts.appendChild(arc); acts.appendChild(rem);
+      if (p.assigned) {
+        rem.disabled = true;
+        var w = document.createElement('span'); w.className = 'remwarn'; w.textContent = '⚠ em uso';
+        acts.appendChild(w);
+      }
       tr.children[9].appendChild(acts);
       tb.appendChild(tr);
     });
@@ -1338,12 +1349,10 @@
       .catch(function (e) { log(e.message); });
   }
   function removePl(p) {
-    if (!confirm('Remover a playlist "' + p.name + '"? Itens e atribuições vão junto.')) return;
+    if (p.assigned) { log('não dá para remover "' + p.name + '": está vinculada a um player'); return; }
+    if (!confirm('Remover a playlist "' + p.name + '"? Os itens vão junto.')) return;
     api('/api/playlists/' + p.id, { method: 'DELETE' }).then(done).catch(function (e) {
-      if (e.body && e.body.targets) {
-        if (confirm('Está atribuída a ' + e.body.targets.length + ' alvo(s). Remover mesmo assim?'))
-          api('/api/playlists/' + p.id + '?force=true', { method: 'DELETE' }).then(done).catch(function (e2) { log(e2.message); });
-      } else log('remover playlist: ' + e.message);
+      log('remover playlist: ' + (e.body && e.body.error || e.message));
     });
     function done() { log('playlist removida'); if (state.activePlaylist === p.id) closePlEdit(); loadPlaylists(); loadDevices(); loadGroups(); }
   }
@@ -1415,11 +1424,6 @@
       .then(function (d) { log('playlist orientação=' + v + ' (v' + d.playlist.version + ')'); loadPlaylistItems(); loadPlaylists(); })
       .catch(function (e) { log('orientação: ' + e.message); });
   };
-  $('plDeleteBtn').onclick = function () {
-    if (!state.activePlaylist) return;
-    var p = (state.playlists || []).find(function (x) { return x.id === state.activePlaylist; }) || { id: state.activePlaylist, name: '#' + state.activePlaylist };
-    removePl(p);
-  };
   $('plAddBtn').onclick = function () { if (state.activePlaylist) openPlAdd(); };
 
   function loadPlaylists() {
@@ -1469,7 +1473,7 @@
           '<div class="pliname" title="' + esc(it.filename) + '">' + esc(it.filename) + '</div>' +
           '<div class="pliact">' + dur +
           ' <button class="pli-sched" title="horário">🕐' + sdot + '</button>' +
-          ' <button class="pli-susp" title="' + (it.suspended ? 'retomar' : 'suspender') + '">' + (it.suspended ? '▶' : '⏸') + '</button>' +
+          ' <button class="pli-susp" title="' + (it.suspended ? 'retomar' : 'suspender') + '">' + (it.suspended ? '▶' : '⊘') + '</button>' +
           ' <button class="pli-del" title="remover">✕</button></div>';
         grid.appendChild(tile);
 
