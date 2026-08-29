@@ -256,12 +256,14 @@ src/
 public/
   player/index.html    player kiosk (vanilla) — segue ?p= p/ detectar troca de playlist
   admin/index.html     painel em ABAS (Biblioteca · Playlists · Dispositivos ·
-                       Administracao) no <header> fixo/sticky (ao lado do seletor
-                       de empresa; slot #brandLogo reservado p/ logo a esquerda;
-                       aba ativa = fundo claro + fonte escura) + barra de Log
-                       retratil no rodape. Aba lembrada em localStorage e no hash
-                       da URL (#pane-playlist etc.); a aba Administracao so aparece
-                       com permissao roles/users:manage.
+                       Configuracao · Administracao) no <header> fixo/sticky (ao
+                       lado do seletor de empresa; #brandLogo mostra a logo da
+                       empresa se houver, senao "A3K CMS"; aba ativa = fundo claro
+                       + fonte escura) + barra de Log retratil no rodape. Aba
+                       lembrada em localStorage e no hash da URL.
+                       Administracao = SO superadmin (empresas + papeis + usuarios
+                       + logo por empresa + modulos). Configuracao = administrador
+                       (mostra os modulos liberados; resto em construcao).
                        Aba Dispositivos = tela cheia, visao unificada grupo+players:
                        cada grupo e uma linha-mae (playlist atual + "Salvar",
                        renomear, apagar) e os players entram nas linhas abaixo.
@@ -306,7 +308,7 @@ node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m13.test.js  testes de aceite (135 no total)
+  m0..m14.test.js  testes de aceite (139 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -314,7 +316,12 @@ por plataforma. Sem toolchain nativo. `FFPROBE_PATH` no `.env` sobrescreve.
 
 ## Modelo de dados
 
-`companies`, `roles` (`permissions` JSON), `users` (`is_superadmin` no M5).
+`companies` (`roles`/`users`; migration 012 add `logo_url` e `modules` [JSON array:
+`digital`/`logistica`/`experience`, default `["digital"]`]). `POST/PATCH
+/api/companies` aceita `modules`; `POST /api/companies/:id/logo` (multipart,
+superadmin) grava `media/logo-c<id>.<ext>` servido em `/assets/`. `GET
+/api/auth/me` devolve `user.company = { id, name, logo_url, modules }`.
+`roles` (`permissions` JSON), `users` (`is_superadmin` no M5).
 `folders`, `assets` — biblioteca (colunas de metadados nullable ate o M2).
 `playlists` (com `version`; migration 011 add `folder_id`, `created_by`,
 `valid_from`/`valid_until` [YYYY-MM-DD], `suspended`, `archived`),

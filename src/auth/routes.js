@@ -5,6 +5,7 @@ const { getDb } = require('../db');
 const { verifyPassword } = require('./password');
 const { signToken } = require('./jwt');
 const { requireAuth } = require('./middleware');
+const { normalizeModules } = require('../lib/modules');
 
 const router = express.Router();
 
@@ -43,9 +44,15 @@ router.post('/login', (req, res) => {
   });
 });
 
-// GET /api/auth/me -> usuario autenticado
+// GET /api/auth/me -> usuario autenticado + a empresa em contexto (logo/modulos)
 router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: req.auth });
+  const c = getDb()
+    .prepare('SELECT id, name, logo_url, modules FROM companies WHERE id = ?')
+    .get(req.auth.companyId);
+  const company = c
+    ? { id: c.id, name: c.name, logo_url: c.logo_url || null, modules: normalizeModules(c.modules) }
+    : null;
+  res.json({ user: { ...req.auth, company } });
 });
 
 module.exports = router;

@@ -12,6 +12,16 @@
     min-height:74px; position:sticky; top:0; z-index:20; background:var(--bg); flex-wrap:wrap; }
   header b { font-size:16px; }
   #brandLogo { display:flex; align-items:center; gap:8px; min-width:130px; min-height:44px; }
+  #brandLogo img { max-height:40px; max-width:170px; object-fit:contain; display:block; }
+  .modrow { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .modrow label { display:inline-flex; align-items:center; gap:5px; margin:0; padding:5px 10px;
+    border:1px solid var(--line); border-radius:7px; font-size:12px; cursor:pointer; color:var(--fg); }
+  .modrow label input { width:auto; margin:0; }
+  .modrow .modbadge { padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+  .modrow .modbadge.on { background:#173a29; color:#5fd08a; }
+  .modrow .modbadge.off { background:#2a3947; color:var(--mut); }
+  #compTbl .logocell img { max-height:26px; max-width:80px; object-fit:contain; vertical-align:middle; border:1px solid var(--line); border-radius:4px; background:#fff2; }
+  #compTbl .logocell button { padding:3px 8px; font-size:11px; }
   main { max-width:1040px; margin:0 auto; padding:20px; display:grid; gap:16px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
   #tabbar { display:flex; gap:6px; flex-wrap:wrap; }
@@ -206,6 +216,7 @@
     <button data-target="pane-biblioteca">Biblioteca</button>
     <button data-target="pane-playlist">Playlists</button>
     <button data-target="pane-dispositivos">Dispositivos</button>
+    <button data-target="pane-config" id="tabConfigBtn" class="hidden">Configuração</button>
     <button data-target="adminCard" id="tabAdminBtn" class="hidden">Administração</button>
   </nav>
   <span style="flex:1"></span>
@@ -291,14 +302,26 @@
     </tr></thead><tbody></tbody></table>
   </div>
 
+  <div class="card tabpane hidden" id="pane-config">
+    <h2>Configuração</h2>
+    <h3 style="color:var(--mut);font-size:13px;margin:4px 0">Módulos habilitados</h3>
+    <div id="cfgModules" class="modrow"></div>
+    <p class="muted" style="font-size:12px;margin-top:6px">Os módulos são liberados pelo superadmin na aba Administração ao criar/editar a empresa.</p>
+    <h3 style="color:var(--mut);font-size:13px;margin:20px 0 4px">Permissões e ajustes do administrador</h3>
+    <p class="muted">🚧 Em construção — aqui o administrador vai poder criar configurações e liberar permissões por função.</p>
+  </div>
+
   <div class="card tabpane hidden" id="adminCard">
     <h2>Administracao</h2>
 
     <div id="companiesBlock" class="hidden">
       <h3 style="color:var(--mut);font-size:13px;margin:4px 0">Empresas</h3>
-      <table id="compTbl"><thead><tr><th>ID</th><th>Nome</th><th>Usuarios</th><th>Devices</th><th></th></tr></thead><tbody></tbody></table>
-      <div class="row" style="margin-top:8px">
+      <table id="compTbl"><thead><tr>
+        <th>ID</th><th>Nome</th><th>Módulos</th><th>Logo</th><th>Usuários</th><th>Devices</th>
+      </tr></thead><tbody></tbody></table>
+      <div class="row" style="margin-top:8px;align-items:start">
         <div><label>Nova empresa</label><input id="compName" placeholder="Cliente XPTO" /></div>
+        <div><label>Módulos</label><div id="compModules" class="modrow"></div></div>
         <div><label>Admin e-mail (opc.)</label><input id="compAdminEmail" /></div>
         <div><label>Admin senha (opc.)</label><input id="compAdminPass" type="password" /></div>
         <button id="compCreateBtn">Criar empresa</button>
@@ -481,20 +504,19 @@
   }
 
   // ---- abas ----
-  var TABS = ['pane-biblioteca', 'pane-playlist', 'pane-dispositivos', 'adminCard'];
+  var TABS = ['pane-biblioteca', 'pane-playlist', 'pane-dispositivos', 'pane-config', 'adminCard'];
+  var GATED = { 'pane-config': 1, adminCard: 1 }; // so aparecem se nao estiverem 'hidden'
   var _tabsWired = false;
   var _bootTab = '';
   function tabAvailable(id) {
-    if (id === 'adminCard') return !$('adminCard').classList.contains('hidden');
+    if (GATED[id]) return $(id) && !$(id).classList.contains('hidden');
     return TABS.indexOf(id) >= 0;
   }
   function showTab(id) {
     if (!tabAvailable(id)) id = 'pane-biblioteca';
     TABS.forEach(function (t) {
-      var pane = $(t); if (pane && t !== 'adminCard') pane.classList.toggle('active', t === id);
+      var pane = $(t); if (pane) pane.classList.toggle('active', t === id);
     });
-    // adminCard: 'active' so entra se tiver permissao (senao 'hidden' o mantem fora)
-    $('adminCard').classList.toggle('active', id === 'adminCard');
     var btns = $('tabbar').querySelectorAll('button[data-target]');
     for (var i = 0; i < btns.length; i++) {
       btns[i].classList.toggle('active', btns[i].getAttribute('data-target') === id);
@@ -1834,22 +1856,52 @@
     var p = (state.me && state.me.permissions) || {};
     return !!(state.me && state.me.isSuperadmin) || p['*'] === true || p[perm] === true;
   }
+  var MODULE_LABELS = { digital: 'Digital', logistica: 'Logística', experience: 'Experiênce' };
+
   function loadMe() {
     return api('/api/auth/me').then(function (d) {
       state.me = d.user;
       $('who').textContent = d.user.email + (d.user.isSuperadmin ? ' · superadmin' : '') +
         (state.companyCtx ? ' · empresa ' + state.companyCtx : '');
-      $('companiesBlock').classList.toggle('hidden', !d.user.isSuperadmin);
-      $('companyCtx').classList.toggle('hidden', !d.user.isSuperadmin);
-      var admin = can('roles:manage') || can('users:manage');
-      $('adminCard').classList.toggle('hidden', !admin);
-      $('tabAdminBtn').classList.toggle('hidden', !admin);
-      if (!admin && $('adminCard').classList.contains('active')) showTab('pane-biblioteca');
-      // aba Administração so fica disponivel depois do loadMe: reaplica se era a salva
-      if (admin && _bootTab === 'adminCard' && !$('adminCard').classList.contains('active')) {
-        _bootTab = ''; showTab('adminCard');
-      }
+      var sa = !!d.user.isSuperadmin;
+      var admin = sa || can('roles:manage') || can('users:manage');
+
+      // Administração = só superadmin (empresas / papéis / usuários / logo / módulos)
+      $('companiesBlock').classList.toggle('hidden', !sa);
+      $('companyCtx').classList.toggle('hidden', !sa);
+      $('adminCard').classList.toggle('hidden', !sa);
+      $('tabAdminBtn').classList.toggle('hidden', !sa);
+      // Configuração = administrador (e superadmin também vê)
+      $('pane-config').classList.toggle('hidden', !admin);
+      $('tabConfigBtn').classList.toggle('hidden', !admin);
+
+      if (!sa && $('adminCard').classList.contains('active')) showTab('pane-biblioteca');
+      if (!admin && $('pane-config').classList.contains('active')) showTab('pane-biblioteca');
+      // abas gated só existem após o loadMe: reaplica se era a salva
+      if (sa && _bootTab === 'adminCard') { _bootTab = ''; showTab('adminCard'); }
+      if (admin && _bootTab === 'pane-config') { _bootTab = ''; showTab('pane-config'); }
+
+      renderBrand();
+      renderConfigPane();
     });
+  }
+
+  function renderBrand() {
+    var logo = state.me && state.me.company && state.me.company.logo_url;
+    if (logo) {
+      $('brandLogo').innerHTML = '<img src="' + API + logo + '?t=' + Date.now() +
+        '" alt="logo" onerror="this.parentNode.innerHTML=\'&lt;b&gt;A3K CMS&lt;/b&gt;\'">';
+    } else {
+      $('brandLogo').innerHTML = '<b>A3K CMS</b> <span class="muted">painel admin</span>';
+    }
+  }
+  function renderConfigPane() {
+    var box = $('cfgModules'); if (!box) return;
+    var mods = (state.me && state.me.company && state.me.company.modules) || [];
+    box.innerHTML = Object.keys(MODULE_LABELS).map(function (m) {
+      var on = mods.indexOf(m) >= 0;
+      return '<span class="modbadge ' + (on ? 'on' : 'off') + '">' + (on ? '✓ ' : '✗ ') + MODULE_LABELS[m] + '</span>';
+    }).join('');
   }
   $('companyCtx').onchange = function () {
     state.companyCtx = this.value;
@@ -1857,29 +1909,86 @@
     log('contexto: empresa ' + (this.value || '(propria)'));
     refreshAll();
   };
+  var ALL_MODULES = ['digital', 'logistica', 'experience'];
+  function moduleChecks(container, selected) {
+    container.innerHTML = '';
+    ALL_MODULES.forEach(function (m) {
+      var l = document.createElement('label');
+      l.innerHTML = '<input type="checkbox" value="' + m + '"' + (selected.indexOf(m) >= 0 ? ' checked' : '') + '> ' + MODULE_LABELS[m];
+      container.appendChild(l);
+    });
+  }
+  function readModuleChecks(container) {
+    return Array.prototype.map.call(container.querySelectorAll('input:checked'), function (c) { return c.value; });
+  }
+
   function loadCompanies() {
     if (!state.me || !state.me.isSuperadmin) return Promise.resolve();
     return api('/api/companies').then(function (d) {
       var tb = $('compTbl').querySelector('tbody'); tb.innerHTML = '';
       var ctx = $('companyCtx'); ctx.innerHTML = '<option value="">— minha empresa</option>';
       d.companies.forEach(function (c) {
-        tb.insertAdjacentHTML('beforeend', '<tr><td>' + c.id + '</td><td>' + esc(c.name) +
-          '</td><td>' + c.user_count + '</td><td>' + c.device_count + '</td><td></td></tr>');
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + c.id + '</td><td>' + esc(c.name) + '</td>' +
+          '<td class="modrow"></td><td class="logocell"></td>' +
+          '<td>' + c.user_count + '</td><td>' + c.device_count + '</td>';
+        // modulos (toggle -> PATCH)
+        var modCell = tr.children[2];
+        moduleChecks(modCell, c.modules || []);
+        modCell.querySelectorAll('input').forEach(function (inp) {
+          inp.onchange = function () {
+            jpost('/api/companies/' + c.id, { modules: readModuleChecks(modCell) }, 'PATCH')
+              .then(function () { log('empresa #' + c.id + ' módulos: ' + readModuleChecks(modCell).join(', ') || '(nenhum)');
+                loadCompanies(); if (c.id === state.me.homeCompanyId || String(c.id) === String(state.companyCtx)) loadMe(); })
+              .catch(function (e) { log('módulos: ' + e.message); loadCompanies(); });
+          };
+        });
+        // logo
+        var lc = tr.children[3];
+        if (c.logo_url) {
+          lc.innerHTML = '<img src="' + API + c.logo_url + '?t=' + Date.now() + '" alt="">';
+        }
+        var fi = document.createElement('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.className = 'hidden';
+        var up = document.createElement('button'); up.className = 'ghost'; up.textContent = c.logo_url ? 'trocar' : 'enviar logo';
+        up.onclick = function () { fi.click(); };
+        fi.onchange = function () {
+          if (!fi.files[0]) return;
+          var fd = new FormData(); fd.append('file', fi.files[0]);
+          api('/api/companies/' + c.id + '/logo', { method: 'POST', body: fd })
+            .then(function () { log('logo da empresa #' + c.id + ' atualizada'); loadCompanies(); loadMe(); })
+            .catch(function (e) { log('logo: ' + e.message); });
+        };
+        lc.appendChild(document.createElement('br'));
+        lc.appendChild(up); lc.appendChild(fi);
+        if (c.logo_url) {
+          var rm = document.createElement('button'); rm.className = 'danger'; rm.textContent = 'remover';
+          rm.onclick = function () {
+            api('/api/companies/' + c.id + '/logo', { method: 'DELETE' })
+              .then(function () { log('logo da empresa #' + c.id + ' removida'); loadCompanies(); loadMe(); })
+              .catch(function (e) { log(e.message); });
+          };
+          lc.appendChild(rm);
+        }
+        tb.appendChild(tr);
         var o = document.createElement('option'); o.value = c.id; o.textContent = '#' + c.id + ' ' + c.name;
         ctx.appendChild(o);
       });
       ctx.value = state.companyCtx || '';
+      if ($('compModules') && !$('compModules').children.length) moduleChecks($('compModules'), ['digital']);
     });
   }
   $('compCreateBtn').onclick = function () {
     var body = { name: $('compName').value.trim() };
     if (!body.name) return;
+    body.modules = readModuleChecks($('compModules'));
     if ($('compAdminEmail').value && $('compAdminPass').value) {
       body.admin = { email: $('compAdminEmail').value.trim(), password: $('compAdminPass').value };
     }
     jpost('/api/companies', body).then(function (d) {
-      log('empresa #' + d.company.id + ' criada' + (d.admin_user ? ' (admin ' + d.admin_user.email + ')' : ''));
+      log('empresa #' + d.company.id + ' criada (' + d.company.modules.join(', ') + ')' +
+        (d.admin_user ? ' — admin ' + d.admin_user.email : ''));
       $('compName').value = $('compAdminEmail').value = $('compAdminPass').value = '';
+      moduleChecks($('compModules'), ['digital']);
       loadCompanies();
     }).catch(function (e) { log('empresa: ' + e.message); });
   };
