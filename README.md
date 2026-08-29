@@ -242,6 +242,14 @@ Superadmin manda `X-Company-Id` p/ atuar em outra empresa.
 | PATCH | `/api/devices/:id` | `{name?,status?,player_type?,group_id?}` |
 | POST | `/api/devices/:id/assign` | `{playlist_id}` (upsert do assignment do device) |
 | DELETE | `/api/devices/:id/assign` | desatribui (volta a herdar do grupo) |
+| PATCH | `/api/devices/:id` | +`{screenshot_interval:1\|5\|10\|30\|60, comm_interval}` |
+| POST · GET | `/api/devices/:id/commands` | enfileira / lista comandos (`ping` `restart` `clear_cache` `unassign_playlist` `screenshot`; `unassign` resolve na hora) |
+| GET | `/api/devices/:id/screenshots` | capturas (últimos 7 dias) |
+| GET | `/api/devices/:id/comm-log?days=30` | ciclos de 4 tentativas |
+| POST | `/api/devices/:id/commands/:cmdId/ack` | _device_ — `{status,result}` |
+| POST | `/api/devices/:id/screenshots` | _device_ — multipart, `?source=auto\|manual` |
+| POST | `/api/devices/:id/comm-log` | _device_ — `{at,attempts:[{n,ok,ms,detail}]}` |
+| GET | `/api/devices/:id/comm-check` | _device_ — ping barato p/ as 4 tentativas |
 | GET  | `/api/device-groups` · POST · PATCH · DELETE | CRUD de grupos |
 | POST | `/api/device-groups/:id/devices` | `{device_ids:[...]}` move devices p/ o grupo |
 | POST · DELETE | `/api/device-groups/:id/assign` | `{playlist_id}` playlist -> grupo |
@@ -403,7 +411,7 @@ node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m17.test.js  testes de aceite (153 no total)
+  m0..m18.test.js  testes de aceite (160 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
