@@ -26,16 +26,17 @@
   #status {
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
     display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 12px;
-    color: #cfd8e3; font: 16px/1.4 system-ui, sans-serif; text-align: center; padding: 24px;
+    align-items: center; justify-content: center; gap: 14px;
+    color: #cfd8e3; font: 16px/1.5 system-ui, sans-serif; text-align: center; padding: 24px;
     transform-origin: top left; box-sizing: border-box;
   }
   #status .serial {
-    font: 700 34px/1 ui-monospace, Menlo, Consolas, monospace;
-    letter-spacing: 3px; color: #fff; background: #111a24;
-    border: 1px solid #24384a; border-radius: 12px; padding: 16px 24px;
+    font: 700 46px/1 ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing: 8px; color: #fff; background: #111a24;
+    border: 1px solid #24384a; border-radius: 14px; padding: 20px 30px;
   }
   #status small { color: #6b7d8f; }
+  #status .big { font-size: 19px; color: #e7edf3; max-width: 640px; }
   .hidden { display: none !important; }
   #badge {
     position: fixed; right: 8px; bottom: 6px; color: #33465a;
@@ -47,9 +48,9 @@
   <div id="stage"></div>
   <div id="cover"></div>
   <div id="status">
-    <div>A3K Digital Signage</div>
+    <div id="statusTitle">A3K Digital Signage</div>
     <div class="serial" id="serial">…</div>
-    <div id="statusMsg">Pareando…</div>
+    <div class="big" id="statusMsg">Iniciando…</div>
     <small id="statusHint"></small>
   </div>
   <div id="badge"></div>
@@ -58,10 +59,11 @@
 (function () {
   'use strict';
 
-  var PLAYER_VERSION = '2026-08-28.7';
+  var PLAYER_VERSION = '2026-08-29.1';
   var API = location.origin;
   var POLL_MS = 15000;
   var HEARTBEAT_MS = 60000;
+  var ACT_POLL_MS = 4000;
 
   var LS = {
     get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -71,6 +73,7 @@
   var stage = document.getElementById('stage');
   var cover = document.getElementById('cover');
   var statusEl = document.getElementById('status');
+  var statusTitle = document.getElementById('statusTitle');
   var serialEl = document.getElementById('serial');
   var statusMsg = document.getElementById('statusMsg');
   var statusHint = document.getElementById('statusHint');
@@ -82,15 +85,15 @@
   }
 
   var device = {
-    id: LS.get('a3k_device_id'),
-    token: LS.get('a3k_token'),
-    serial: LS.get('a3k_serial'),
+    id: LS.get('a3k_device_id') || null,
+    token: LS.get('a3k_token') || null,
+    serial: LS.get('a3k_serial') || null,
     hardwareId: LS.get('a3k_hw') || null,
   };
 
   // Identidade fisica injetada pelo app nativo (?hw=). Tem prioridade sobre o
   // valor salvo: se mudou (ex.: imagem de disco clonada para outro aparelho),
-  // descarta o pareamento antigo e pareia de novo com o hw real.
+  // descarta a ativacao antiga e ativa de novo com o hw real.
   var injectedHw = urlParam('hw');
   if (injectedHw && injectedHw !== device.hardwareId) {
     LS.set('a3k_device_id', ''); LS.set('a3k_token', ''); LS.set('a3k_serial', '');
@@ -106,14 +109,6 @@
     LS.set('a3k_hw', device.hardwareId);
   }
 
-  // codigo de pareamento (fluxo "Add player"): da URL (?code= ou #code=) ou salvo.
-  // so vale enquanto o device ainda nao tem token.
-  function pairCode() {
-    var fromUrl = urlParam('code');
-    if (fromUrl) LS.set('a3k_code', fromUrl);
-    return device.token ? null : (fromUrl || LS.get('a3k_code') || null);
-  }
-
   var currentVersion = -1;
   var currentPlaylistId = -1;
   var allItems = [];   // tudo que veio no manifest
@@ -123,6 +118,108 @@
   var activeSig = '';   // assinatura do subconjunto ativo, p/ detectar mudanca
   var manifestName = null;
   var plRotation = 0, plMirror = 0;   // orientacao padrao da playlist
+  var objUrls = [];     // object URLs em uso no #stage (revogados na troca)
+  var dlMsg = '';       // progresso do download offline (mostrado no badge)
+  var activation = null;
+  var actPollTimer = null, expiryTimer = null;
+
+  // ---------------------------------------------------------------- F11 tela cheia
+  function toggleFullscreen() {
+    try {
+      if (!document.fullscreenElement) {
+        var el = document.documentElement;
+        var rq = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+        if (rq) { var p = rq.call(el); if (p && p.catch) p.catch(function () {}); }
+      } else {
+        var ex = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+        if (ex) ex.call(document);
+      }
+    } catch (e) {}
+  }
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'F11' || e.keyCode === 122) { e.preventDefault(); toggleFullscreen(); }
+  });
+
+  // ---------------------------------------------------------------- IndexedDB (offline)
+  // Guarda cada asset como Blob (chave = hash sha256, ou a url se nao houver hash)
+  // e o ultimo manifest. Funciona em http puro (nao exige secure context).
+  var IDB_NAME = 'a3k-player', IDB_VER = 1, _db = null;
+  function idb() {
+    if (_db) return Promise.resolve(_db);
+    return new Promise(function (resolve, reject) {
+      if (!self.indexedDB) return reject(new Error('sem IndexedDB'));
+      var rq = indexedDB.open(IDB_NAME, IDB_VER);
+      rq.onupgradeneeded = function () {
+        var d = rq.result;
+        if (!d.objectStoreNames.contains('media')) d.createObjectStore('media');
+        if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
+      };
+      rq.onsuccess = function () { _db = rq.result; resolve(_db); };
+      rq.onerror = function () { reject(rq.error); };
+    });
+  }
+  function idbReq(store, mode, fn) {
+    return idb().then(function (d) {
+      return new Promise(function (resolve, reject) {
+        var tx = d.transaction(store, mode);
+        var rq = fn(tx.objectStore(store));
+        tx.oncomplete = function () { resolve(rq ? rq.result : undefined); };
+        tx.onerror = tx.onabort = function () { reject(tx.error); };
+      });
+    });
+  }
+  function mediaGet(k) { return idbReq('media', 'readonly', function (s) { return s.get(k); }); }
+  function mediaPut(k, v) { return idbReq('media', 'readwrite', function (s) { return s.put(v, k); }); }
+  function mediaDel(k) { return idbReq('media', 'readwrite', function (s) { return s.delete(k); }); }
+  function mediaKeys() { return idbReq('media', 'readonly', function (s) { return s.getAllKeys(); }); }
+  function metaGet(k) { return idbReq('meta', 'readonly', function (s) { return s.get(k); }); }
+  function metaPut(k, v) { return idbReq('meta', 'readwrite', function (s) { return s.put(v, k); }); }
+
+  function cacheKey(it) { return it.hash || it.url; }
+
+  // Baixa tudo que falta e apaga o que saiu da playlist.
+  function syncMedia(items) {
+    var list = (items || []).filter(function (it) { return it && it.url; });
+    var keep = {};
+    list.forEach(function (it) { keep[cacheKey(it)] = 1; });
+    var i = 0;
+    function step() {
+      if (i >= list.length) {
+        dlMsg = ''; paintBadge();
+        return mediaKeys().then(function (all) {
+          return Promise.all((all || [])
+            .filter(function (k) { return !keep[k]; })
+            .map(function (k) { return mediaDel(k).catch(function () {}); }));
+        }).catch(function () {});
+      }
+      var it = list[i++], k = cacheKey(it);
+      return mediaGet(k).then(function (hit) {
+        if (hit && hit.blob) return step();
+        dlMsg = 'baixando ' + i + '/' + list.length;
+        paintBadge();
+        return fetch(API + it.url).then(function (r) {
+          if (!r.ok) throw new Error('dl ' + r.status);
+          return r.blob();
+        }).then(function (blob) {
+          return mediaPut(k, { blob: blob, mime: it.mime || blob.type, url: it.url, at: Date.now() });
+        }).then(step, function () { return step(); });   // erro num item: segue os demais
+      }, function () { return step(); });
+    }
+    return Promise.resolve().then(step);
+  }
+
+  // URL para tocar: do cache (blob) se houver, senao streaming direto.
+  function srcFor(it) {
+    var k = cacheKey(it);
+    return mediaGet(k).then(function (hit) {
+      if (hit && hit.blob) {
+        var u = URL.createObjectURL(hit.blob);
+        objUrls.push(u);
+        return u;
+      }
+      return API + it.url;
+    }).catch(function () { return API + it.url; });
+  }
 
   // ---- day-parting: espelha src/lib/schedule.js, avaliado no relogio local ----
   function schedToMinutes(hhmm) {
@@ -142,8 +239,8 @@
     if (typeof s === 'string') { try { s = JSON.parse(s); } catch (e) { return true; } if (s == null) return true; }
     var d = date || new Date();
     var day = ymd(d);
-    if (s.from && day < s.from) return false;
-    if (s.until && day > s.until) return false;
+    if (s.from && day < String(s.from).slice(0, 10)) return false;
+    if (s.until && day > String(s.until).slice(0, 10)) return false;
     var start = s.start ? schedToMinutes(s.start) : 0;
     var end = s.end ? schedToMinutes(s.end) : 1440;
     if (end === 0) end = 1440;
@@ -166,52 +263,125 @@
     if (/Windows/i.test(ua)) return 'windows';
     return 'unknown';
   }
+  function caps() {
+    return { userAgent: navigator.userAgent, screen: [screen.width, screen.height], player: PLAYER_VERSION };
+  }
 
   function setStatus(msg, hint) {
-    statusMsg.textContent = msg || '';
+    if (/[<>]/.test(msg || '')) statusMsg.innerHTML = msg || '';
+    else statusMsg.textContent = msg || '';
     statusHint.textContent = hint || '';
   }
   function showStatus(show) { statusEl.classList.toggle('hidden', !show); }
+  function paintBadge() {
+    badge.textContent = (device.serial || '(sem serial)') +
+      (currentVersion >= 0 ? ' · v' + currentVersion : '') +
+      (dlMsg ? ' · ' + dlMsg : '') + ' · p' + PLAYER_VERSION;
+  }
 
-  function pair() {
-    setStatus('Pareando…');
-    var body = {
-      hardware_id: device.hardwareId,
-      player_type: detectPlayerType(),
-      name: null,
-    };
-    var code = pairCode();
-    if (code) body.code = code;
-    return fetch(API + '/api/pair/new', {
+  // ---------------------------------------------------------------- ativacao
+  function saveDevice(d) {
+    device.id = String(d.id);
+    device.token = d.token || device.token;
+    if (d.serial) device.serial = d.serial;
+    LS.set('a3k_device_id', device.id);
+    if (device.token) LS.set('a3k_token', device.token);
+    if (device.serial) LS.set('a3k_serial', device.serial);
+    serialEl.textContent = device.serial || '';
+  }
+
+  function stopActivation() {
+    clearInterval(actPollTimer); actPollTimer = null;
+    clearInterval(expiryTimer); expiryTimer = null;
+    activation = null;
+  }
+
+  function renderCodeScreen() {
+    showStatus(true);
+    statusTitle.textContent = 'Ative este player';
+    serialEl.textContent = activation.code;
+    setStatus(
+      'No painel A3K: <b>Playlists &rarr; sua playlist &rarr; &#65291; ativar player</b><br>e informe o c&oacute;digo acima.',
+      ''
+    );
+    clearInterval(expiryTimer);
+    expiryTimer = setInterval(tickExpiry, 1000);
+    tickExpiry();
+  }
+  function tickExpiry() {
+    var hint = 'F11 = tela cheia';
+    if (activation && activation.expiresAt) {
+      var end = new Date(String(activation.expiresAt).replace(' ', 'T') + 'Z').getTime();
+      var left = Math.max(0, Math.round((end - Date.now()) / 1000));
+      var mm = Math.floor(left / 60), ss = left % 60;
+      hint = 'expira em ' + mm + ':' + (ss < 10 ? '0' : '') + ss + '  ·  ' + hint;
+      if (left <= 0) { stopActivation(); activate(); return; }
+    }
+    statusHint.textContent = hint;
+  }
+
+  // Resolve quando o player tem token (ativado ou re-autenticado).
+  function activate() {
+    showStatus(true);
+    statusTitle.textContent = 'A3K Digital Signage';
+    serialEl.textContent = '…';
+    setStatus('Ativando…', 'F11 = tela cheia');
+    return fetch(API + '/api/activation/new', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ hardware_id: device.hardwareId, player_type: detectPlayerType(), capabilities: caps() }),
     })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d || !d.token) throw new Error(d && d.error ? d.error : 'pair falhou');
-        device.id = String(d.deviceId);
-        device.token = d.token;
-        device.serial = d.serial;
-        LS.set('a3k_device_id', device.id);
-        LS.set('a3k_token', device.token);
-        LS.set('a3k_serial', device.serial);
-        LS.set('a3k_code', ''); // consumido
-        serialEl.textContent = device.serial;
+        if (d && d.already_active && d.device && d.device.token) {
+          saveDevice(d.device);
+          stopActivation();
+          return true;
+        }
+        if (!d || !d.code) throw new Error(d && d.error ? d.error : 'ativacao falhou');
+        activation = { code: d.code, pollSecret: d.poll_secret, expiresAt: d.expires_at };
+        renderCodeScreen();
+        return waitForRedeem();
+      })
+      .catch(function (e) {
+        setStatus('Sem conexao com o servidor', String(e && e.message || e));
+        return new Promise(function (resolve) { setTimeout(function () { activate().then(resolve); }, 5000); });
       });
+  }
+
+  function waitForRedeem() {
+    return new Promise(function (resolve) {
+      clearInterval(actPollTimer);
+      actPollTimer = setInterval(function () {
+        if (!activation) { clearInterval(actPollTimer); return; }
+        var u = API + '/api/activation/status?hardware_id=' + encodeURIComponent(device.hardwareId) +
+          '&s=' + encodeURIComponent(activation.pollSecret);
+        fetch(u)
+          .then(function (r) { return r.json().then(function (b) { return { code: r.status, b: b }; }); })
+          .then(function (o) {
+            if (o.code === 404 || (o.b && o.b.status === 'expired')) {
+              stopActivation(); activate().then(resolve); return;
+            }
+            if (o.b && o.b.status === 'redeemed' && o.b.device) {
+              saveDevice(o.b.device);
+              stopActivation();
+              resolve(true);
+            }
+          })
+          .catch(function () { /* offline: continua tentando */ });
+      }, ACT_POLL_MS);
+    });
   }
 
   function auth() { return { authorization: 'Bearer ' + device.token }; }
 
   function fetchManifest() {
-    var url = API + '/api/devices/' + device.id + '/manifest?v=' + currentVersion +
-      '&p=' + currentPlaylistId;
+    var url = API + '/api/devices/' + device.id + '/manifest?v=' + currentVersion + '&p=' + currentPlaylistId;
     return fetch(url, { headers: auth() }).then(function (r) {
       if (r.status === 304) return null;
       if (r.status === 401 || r.status === 403) {
-        // token perdeu a validade — reparear.
-        device.token = null;
-        return pair().then(function () { return null; });
+        device.token = null; LS.set('a3k_token', '');
+        return activate().then(function () { return null; });
       }
       if (!r.ok) throw new Error('manifest HTTP ' + r.status);
       return r.json();
@@ -251,12 +421,13 @@
     manifestName = m.playlist ? m.playlist.name : null;
     plRotation = Number(m.rotation) || 0;
     plMirror = m.mirror ? 1 : 0;
-    applyOrient(statusEl, plRotation, plMirror);   // tela de status usa o padrao da playlist
+    applyOrient(statusEl, plRotation, plMirror);
+    metaPut('manifest', m).catch(function () {});
     recomputeActive(true);
+    syncMedia(allItems).catch(function () {});
   }
 
-  // Recalcula o subconjunto no ar agora (day-parting). `force` re-renderiza
-  // sempre; senao so quando o conjunto ativo muda.
+  // Recalcula o subconjunto no ar agora (day-parting).
   function recomputeActive(force) {
     var now = new Date();
     var active = allItems.filter(function (it) { return scheduleActive(it.schedule, now); });
@@ -264,17 +435,14 @@
     var changed = sig !== activeSig;
     activeSig = sig;
     playlist = active;
-    badge.textContent = device.serial + ' · v' + currentVersion + ' · ' +
-      active.length + '/' + allItems.length + ' no ar · p' + PLAYER_VERSION;
+    badge.textContent = (device.serial || '') + ' · v' + currentVersion + ' · ' +
+      active.length + '/' + allItems.length + ' no ar' + (dlMsg ? ' · ' + dlMsg : '') + ' · p' + PLAYER_VERSION;
 
     if (!allItems.length) {
       idle(manifestName ? 'Playlist "' + manifestName + '" sem itens' : 'Aguardando conteudo');
       return;
     }
-    if (!active.length) {
-      idle('Nada programado para agora');
-      return;
-    }
+    if (!active.length) { idle('Nada programado para agora'); return; }
     showStatus(false);
     idx = idx % active.length;
     if (force || changed) render();
@@ -282,31 +450,35 @@
 
   function idle(msg) {
     showStatus(true);
-    setStatus(msg, 'Serial: ' + device.serial);
+    statusTitle.textContent = 'A3K Digital Signage';
+    setStatus(msg, 'Serial: ' + (device.serial || '—') + '  ·  F11 = tela cheia');
     clearTimeout(advanceTimer);
     cover.classList.remove('on');
     clearStage();
   }
 
-  // 1x1 transparente — poster do <video> sem o "botao de play".
   var BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-  var preloadEl = null;
 
   function clearStage() {
     Array.prototype.slice.call(stage.children).forEach(function (c) {
       try { if (c.tagName === 'VIDEO') { c.pause(); c.removeAttribute('src'); c.load(); } } catch (e) {}
     });
     stage.innerHTML = '';
+    objUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
+    objUrls = [];
   }
 
-  // Prebusca o proximo item (aquece o cache de disco do app nativo).
   function preloadNext() {
+    // com o cache em IndexedDB o proximo item ja foi baixado por syncMedia;
+    // so garante que ele esta la (no-op se estiver).
     if (playlist.length < 2) return;
     var nx = playlist[(idx + 1) % playlist.length];
-    if (preloadEl) { try { preloadEl.src = ''; } catch (e) {} }
-    preloadEl = nx.type === 'video' ? document.createElement('video') : new Image();
-    if (preloadEl.tagName === 'VIDEO') { preloadEl.preload = 'auto'; preloadEl.muted = true; }
-    preloadEl.src = API + nx.url;
+    if (!nx || !nx.url) return;
+    mediaGet(cacheKey(nx)).then(function (hit) {
+      if (hit && hit.blob) return;
+      return fetch(API + nx.url).then(function (r) { return r.ok ? r.blob() : null; })
+        .then(function (b) { if (b) return mediaPut(cacheKey(nx), { blob: b, mime: nx.mime || b.type, url: nx.url, at: Date.now() }); });
+    }).catch(function () {});
   }
 
   var renderSeq = 0;
@@ -319,14 +491,12 @@
     var dur = (item.duration || 10) * 1000;
     var loop = playlist.length === 1;
 
-    // orientacao do item (NULL = herda da playlist)
     applyOrient(
       stage,
       item.rotation != null ? Number(item.rotation) : plRotation,
       item.mirror != null ? item.mirror : plMirror
     );
 
-    // preto por cima enquanto o proximo item carrega
     cover.classList.add('on');
     var revealed = false;
     function reveal() {
@@ -355,25 +525,28 @@
 
       clearStage();
       stage.appendChild(v);
-      v.src = API + item.url;
-      v.play().catch(function () {});
-      setTimeout(reveal, 2500);                 // revela mesmo se 'playing' nao vier
+      srcFor(item).then(function (url) {
+        if (mySeq !== renderSeq) return;
+        v.src = url;
+        v.play().catch(function () {});
+      });
+      setTimeout(reveal, 2500);
       if (!loop) advanceTimer = setTimeout(next, Math.max(dur, 20000));
     } else if (item.type === 'image' || item.type === 'other' || item.type === 'html') {
       var img = document.createElement('img');
       var imgFail = function () {
         if (mySeq !== renderSeq) return;
         reveal(); clearTimeout(advanceTimer);
-        advanceTimer = setTimeout(next, 2000);   // imagem quebrou -> passa pra proxima
+        advanceTimer = setTimeout(next, 2000);
       };
       img.onload = function () {
-        if (!img.naturalWidth) return imgFail();  // carregou mas nao decodou -> pula
+        if (!img.naturalWidth) return imgFail();
         reveal(); preloadNext();
       };
       img.onerror = imgFail;
       clearStage();
       stage.appendChild(img);
-      img.src = API + item.url;
+      srcFor(item).then(function (url) { if (mySeq === renderSeq) img.src = url; });
       setTimeout(reveal, 1500);
       advanceTimer = setTimeout(next, dur);
     } else {
@@ -396,34 +569,44 @@
       headers: Object.assign({ 'content-type': 'application/json' }, auth()),
       body: JSON.stringify({
         playlist_version: currentVersion < 0 ? 0 : currentVersion,
-        capabilities: { userAgent: navigator.userAgent, screen: [screen.width, screen.height] },
+        capabilities: caps(),
       }),
     }).catch(function () {});
   }
 
   function poll() {
+    if (!device.token) return;
     fetchManifest().then(applyManifest).catch(function (e) {
-      badge.textContent = 'erro: ' + e.message;
+      // offline: segue tocando do cache
+      badge.textContent = (device.serial || '') + ' · offline · ' + (e && e.message || e) + ' · p' + PLAYER_VERSION;
     });
   }
 
   function start() {
     serialEl.textContent = device.serial || '…';
-    var ready = device.id && device.token
-      ? Promise.resolve()
-      : pair();
+    paintBadge();
+
+    var ready = (device.id && device.token) ? Promise.resolve(true) : activate();
 
     ready
+      .then(function () {
+        showStatus(true);
+        statusTitle.textContent = 'A3K Digital Signage';
+        setStatus('Carregando…', 'F11 = tela cheia');
+        return metaGet('manifest').then(function (m) {
+          if (m && !allItems.length) applyManifest(m);   // pinta do cache primeiro
+        }).catch(function () {});
+      })
       .then(function () {
         poll();
         heartbeat();
         setInterval(poll, POLL_MS);
         setInterval(heartbeat, HEARTBEAT_MS);
-        // day-parting: reavalia o que esta no ar a cada 20s, sem esperar novo manifest
         setInterval(function () { recomputeActive(false); }, 20000);
+        window.addEventListener('online', poll);
       })
       .catch(function (e) {
-        setStatus('Falha ao parear', String(e.message || e));
+        setStatus('Falha ao iniciar', String(e && e.message || e));
         setTimeout(start, 5000);
       });
   }

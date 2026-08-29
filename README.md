@@ -159,8 +159,28 @@ Trilho separado, em `players/`. So os nativos entregam offline real.
 - Pendente: `.wgt` Tizen assinado, app webOS, player Windows (Chrome/Edge
   `--kiosk` vs Assigned Access vs Electron — a decidir por projeto).
 
-O player web (`public/player/index.html`) agora aceita `?code=<pairCode>` na URL
-(usado so enquanto o device nao tem token) — serve a todos os wrappers nativos.
+#### Player web (`public/player/index.html`) — demo/navegador
+
+- **Ativação iniciada pelo player** (migration 014): abre-se o link `/player/`,
+  o player cunha um `hardware_id` (UUID no localStorage) e chama
+  `POST /api/activation/new` -> recebe um **código** (6 chars) e mostra na tela.
+  O admin digita esse código no painel (`POST /api/activation/redeem`) e o
+  servidor cria o device + amarra o assignment na playlist. O player faz poll de
+  `GET /api/activation/status` (com `poll_secret`) até virar `redeemed`, guarda o
+  token e entra no loop de manifest. `hardware_id` já conhecido -> `/new`
+  devolve token direto (`already_active`), sem código. `?hw=` na URL tem
+  prioridade (wrappers nativos). O `?code=` do fluxo antigo saiu.
+- **Offline (IndexedDB)**: cada asset é baixado uma vez e guardado como Blob
+  (chave = hash sha256), tocado via `URL.createObjectURL`; o último manifest fica
+  no store `meta`. Funciona em **http puro em qualquer rede** (não exige secure
+  context). GC apaga o que saiu da playlist. Limite: **a casca HTML tem que ser
+  servida** — offline real vale para "a rede caiu com o player já rodando"; boot
+  a frio sem servidor precisa de Service Worker (exige HTTPS) ou do APK nativo.
+  Sem HTTPS não há `storage.persist()` (cache é best-effort).
+- **F11** alterna tela cheia (`requestFullscreen`/`exitFullscreen`), na tela do
+  código e durante a reprodução.
+- Browser recomendado: **Edge/Chrome** (Chromium) — H.264/AAC, autoplay por flag,
+  `--kiosk`/`--app`.
 
 ## Setup
 
@@ -214,9 +234,13 @@ Superadmin manda `X-Company-Id` p/ atuar em outra empresa.
 | GET  | `/api/device-groups` · POST · PATCH · DELETE | CRUD de grupos |
 | POST | `/api/device-groups/:id/devices` | `{device_ids:[...]}` move devices p/ o grupo |
 | POST · DELETE | `/api/device-groups/:id/assign` | `{playlist_id}` playlist -> grupo |
-| POST | `/api/pair/requests` | `{name?,group_id?,player_type?}` -> `{request:{code},provisioning}` |
-| GET  | `/api/pair/requests[/:id]` | lista / poll (mostra o device quando consumido) |
-| DELETE | `/api/pair/requests/:id` | cancela o codigo |
+| POST | `/api/activation/new` | **público** — `{hardware_id,player_type?,capabilities?}` -> `{code,poll_secret,expires_at}` ou `{already_active,device:{token}}` |
+| GET  | `/api/activation/status` | **público** — `?hardware_id=&s=<poll_secret>` -> `{status}` / `{status:'redeemed',device:{token}}` |
+| GET  | `/api/activation` | JWT — códigos `pending` em voo |
+| POST | `/api/activation/redeem` | JWT `pairing:manage` — `{code,playlist_id?,name?,group_id?}` cria o device + assignment |
+| POST | `/api/pair/requests` | _legado_ — `{name?,group_id?,player_type?}` -> `{request:{code},provisioning}` |
+| GET  | `/api/pair/requests[/:id]` | _legado_ — lista / poll |
+| DELETE | `/api/pair/requests/:id` | _legado_ — cancela o codigo |
 | GET · POST · PATCH | `/api/companies[/:id]` | **superadmin** — gestao de empresas |
 | GET · POST · PATCH · DELETE | `/api/roles[/:id]` | perm `roles:manage` — `{name,permissions}` |
 | GET · POST · PATCH | `/api/users[/:id]` · POST `/:id/password` | perm `users:manage` |
@@ -261,6 +285,7 @@ src/
   adapters/            base + tizen/webos/android/windows (stubs) + registry
   lib/
     ids.js             gerador de serial + token + codigo de pareamento
+    provision.js       provisionDevice() — cria/re-vincula device (usado no redeem)
     company.js         empresa alvo de pair sem codigo + companyCount()
     permissions.js     vocabulario de permissoes + validacao + `grants()`
     schedule.js        day-parting: validateSchedule + isActive (janela local)
@@ -270,12 +295,14 @@ src/
     library.js         aplica probe no asset, apaga arquivo orfao
   routes/
     assets.js · folders.js · playlists.js · devices.js · deviceGroups.js
-    pairing.js          Add player (codigo + provisionamento)
+    activation.js       ativação iniciada pelo player (new/status públicos, redeem JWT)
+    pairing.js          _legado_ — Add player (admin gera o codigo)
     companies.js        gestao de empresas (superadmin)
     roles.js · users.js CRUD de papeis e usuarios por empresa
     player.js           pair/new (com codigo), manifest (?v & ?p), heartbeat
 public/
-  player/index.html    player kiosk (vanilla) — segue ?p= p/ detectar troca de playlist
+  player/index.html    player web — ativação por código gerado no player + cache
+                       offline em IndexedDB (Blob por hash) + F11 tela cheia
   admin/index.html     painel em ABAS (Biblioteca · Playlists · Dispositivos ·
                        Configuracao · Administracao) no <header> fixo/sticky (ao
                        lado do seletor de empresa; #brandLogo mostra a logo da
@@ -358,7 +385,7 @@ node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m15.test.js  testes de aceite (145 no total)
+  m0..m16.test.js  testes de aceite (150 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -402,8 +429,12 @@ device + grupo. Escrito por `src/lib/activity.js` (best-effort, nunca quebra a r
 `assignments` — aponta uma playlist para um `device` ou `group`; alvo unico por
 `(company_id, target_type, target_id)`. Device sem assignment proprio herda a do
 grupo (resolucao em `lib/manifest.js`).
-`pair_requests` (M4) — solicitacoes do fluxo "Add player": `code` unico,
-`name`/`group_id`/`player_type` pre-definidos, `status`
-(`pending`/`consumed`/`expired`/`cancelled`), `device_id`, `expires_at`.
+`pair_requests` (M4, _legado_) — fluxo "Add player" onde o admin gerava o codigo.
+
+`activation_codes` (migration 014) — ativação iniciada pelo player: `code` unico,
+`hardware_id`, `poll_secret` (exigido no `/status`), `status`
+(`pending`/`redeemed`/`expired`), `company_id`/`device_id`/`playlist_id` setados
+no `redeem`, `expires_at` (TTL 15min). Refresh do link reaproveita o `pending` do
+hardware; hardware já é device -> `/new` emite token direto.
 
 Regra-chave: alterar uma playlist **incrementa `version`** -> dispara re-sync no player.

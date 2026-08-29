@@ -12,7 +12,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { getDb } = require('../db');
 const { requireAuth, writeGuard } = require('../auth/middleware');
-const { newPairCode } = require('../lib/ids');
+const { newPairCode, newToken } = require('../lib/ids');
 const { provisionDevice, normType } = require('../lib/provision');
 
 const router = express.Router();
@@ -37,10 +37,15 @@ router.post('/new', (req, res) => {
 
   sweep(db);
 
-  // hardware já é um device ativo -> não precisa de código, só re-autenticar.
+  // hardware já é um device ativo -> não precisa de código: emite um token novo.
+  // (posse do hardware_id — um UUID gravado no localStorage do player — é a prova,
+  //  mesmo modelo do re-pair de POST /api/pair/new.)
   const dev = db.prepare("SELECT id, serial, status FROM devices WHERE hardware_id = ?").get(hardwareId);
   if (dev && dev.status !== 'disabled') {
-    return res.json({ already_active: true, serial: dev.serial, device_id: dev.id });
+    const token = newToken();
+    db.prepare("UPDATE devices SET token = ?, last_seen = datetime('now'), updated_at = datetime('now') WHERE id = ?")
+      .run(token, dev.id);
+    return res.json({ already_active: true, device: { id: dev.id, serial: dev.serial, token } });
   }
 
   // refresh do link não deve gerar N códigos: reaproveita o pending do hardware.

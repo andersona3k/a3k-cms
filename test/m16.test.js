@@ -126,11 +126,16 @@ test('redeem de código inexistente/expirado', async () => {
   assert.equal(r.status, 410);
 });
 
-test('hardware que já é device ativo não pede código', async () => {
+test('hardware que já é device ativo recebe token direto (sem código)', async () => {
   const a = (await pub('POST', '/api/activation/new', { hardware_id: 'hw-6' })).body;
   await req('POST', '/api/activation/redeem', { json: { code: a.code } });
 
   const again = await pub('POST', '/api/activation/new', { hardware_id: 'hw-6' });
   assert.equal(again.body.already_active, true);
-  assert.ok(again.body.device_id);
+  assert.ok(again.body.device.token);
+
+  const ok = await fetch(`${baseUrl}/api/devices/${again.body.device.id}/manifest?v=-1&p=-1`, {
+    headers: { authorization: `Bearer ${again.body.device.token}` },
+  });
+  assert.equal(ok.status, 200);
 });

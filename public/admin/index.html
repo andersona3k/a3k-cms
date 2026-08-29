@@ -69,7 +69,9 @@
   #previewStage img, #previewStage video { width:100%; height:100%; object-fit:contain; }
   #previewBar { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); display:flex; gap:10px; align-items:center;
     background:var(--card); border:1px solid var(--line); border-radius:999px; padding:8px 16px; font-size:13px; z-index:46; }
-  #addPlayerModal, #schedModal, #devModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
+  #schedModal, #devModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
+  /* pode ser aberto de dentro do #plEditModal -> fica acima de tudo */
+  #addPlayerModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:60; }
   #schDays label { margin:0; font-size:12px; } #schDays input { width:auto; }
   .modalBox { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; width:420px; max-width:92vw; }
   .modalBox label { margin-top:10px; } .modalBox select, .modalBox input { width:100%; }
@@ -378,7 +380,7 @@
 
   <div class="card tabpane" id="pane-dispositivos">
     <h2>Dispositivos</h2>
-    <p class="muted">Abra <code id="playerUrl"></code> num monitor/aba (pareamento aberto), ou use <b>+ Dispositivo</b> para gerar um codigo com nome/grupo/tipo ja definidos. Cada grupo e uma linha-mae; os players aparecem nas linhas abaixo.</p>
+    <p class="muted">Abra <code id="playerUrl"></code> no monitor/aba: o player mostra um <b>código</b>. Clique em <b>+ Dispositivo</b> (ou "📺 ativar player" dentro de uma playlist) e cole o código para ativar. Cada grupo é uma linha-mãe; os players aparecem nas linhas abaixo.</p>
     <div class="toolbar">
       <button id="grpCreateBtn">+ Grupo</button>
       <button id="addPlayerBtn">+ Dispositivo</button>
@@ -443,19 +445,23 @@
 
 <div id="addPlayerModal" class="hidden">
   <div class="modalBox">
-    <div class="row" style="justify-content:space-between"><b>Add player</b><button class="ghost" id="apClose">fechar</button></div>
+    <div class="row" style="justify-content:space-between"><b>Ativar player</b><button class="ghost" id="apClose">fechar</button></div>
+    <p class="muted" style="font-size:12px">
+      Envie este link para quem vai montar a tela: <code id="apPlayerUrl"></code> —
+      o player abre, mostra um <b>código</b>. Cole o código aqui para ativar.
+    </p>
     <div id="apForm">
-      <label>Tipo de player</label>
-      <select id="apType"><option value="unknown">(indefinido)</option><option value="tizen">Samsung (Tizen)</option><option value="webos">LG (webOS)</option><option value="android">Android</option><option value="windows">Windows</option></select>
+      <label>Código do player</label>
+      <input id="apCodeIn" placeholder="ex.: K7P2QX" style="text-transform:uppercase;letter-spacing:3px;font-family:ui-monospace,monospace" maxlength="8" />
+      <div id="apPending" class="muted" style="font-size:12px;margin:4px 0"></div>
+      <label>Playlist</label>
+      <select id="apPlaylist"><option value="">(atribuir depois)</option></select>
       <label>Nome (opcional)</label><input id="apName" placeholder="TV Recepcao" />
       <label>Grupo (opcional)</label><select id="apGroup"></select>
-      <div style="margin-top:12px"><button id="apGenerate">Gerar codigo</button></div>
+      <div style="margin-top:12px"><button id="apRedeem">Ativar</button></div>
     </div>
     <div id="apResult" class="hidden">
-      <p class="muted">No player, informe este codigo (ou aponte o kiosk para <code id="apPlayerUrl"></code> e digite quando pedir):</p>
-      <div class="code" id="apCode">------</div>
-      <div id="apProv" class="muted"></div>
-      <p id="apWait" class="muted">Aguardando o player parear…</p>
+      <p id="apWait" class="muted"></p>
     </div>
   </div>
 </div>
@@ -509,6 +515,7 @@
     <div class="row" style="justify-content:space-between;align-items:center">
       <span id="plEditNameWrap"></span>
       <span style="display:flex;gap:6px;align-items:center">
+        <button class="ghost" id="plActivateBtn" title="Ativar um player nesta playlist">📺 ativar player</button>
         <button class="ghost" id="plPreviewBtn" title="Pré-visualizar">▶ Preview</button>
         <button id="plEditCfgSave" title="Salvar configurações">💾 Salvar</button>
         <button class="ghost" id="plEditClose" title="Fechar" style="font-size:15px;line-height:1;padding:6px 10px">✕</button>
@@ -2424,44 +2431,62 @@
     }).catch(function (e) { log('salvar: ' + e.message); $('dmSave').disabled = false; });
   };
 
-  // ---- Add player ----
-  var apPoll = null;
-  $('addPlayerBtn').onclick = function () {
+  // ---- Ativar player (código gerado no player, resgatado aqui) ----
+  var apPending = null;
+  function openActivate(playlistId) {
     $('apResult').classList.add('hidden'); $('apForm').classList.remove('hidden');
     $('apPlayerUrl').textContent = API + '/player/';
+    $('apCodeIn').value = '';
+    $('apName').value = '';
     var gsel = $('apGroup'); gsel.innerHTML = '<option value="">— sem grupo</option>';
-    state.groups.forEach(function (g) {
+    (state.groups || []).forEach(function (g) {
       var o = document.createElement('option'); o.value = g.id; o.textContent = g.name; gsel.appendChild(o);
     });
+    var psel = $('apPlaylist'); psel.innerHTML = '<option value="">(atribuir depois)</option>';
+    (state.playlists || []).forEach(function (p) {
+      var o = document.createElement('option'); o.value = p.id; o.textContent = p.name; psel.appendChild(o);
+    });
+    psel.value = playlistId ? String(playlistId) : '';
     $('addPlayerModal').classList.remove('hidden');
-  };
-  $('apClose').onclick = function () { clearInterval(apPoll); $('addPlayerModal').classList.add('hidden'); };
-  $('apGenerate').onclick = function () {
-    var body = { player_type: $('apType').value };
+    refreshPending();
+    clearInterval(apPending);
+    apPending = setInterval(refreshPending, 5000);
+    setTimeout(function () { $('apCodeIn').focus(); }, 50);
+  }
+  function refreshPending() {
+    api('/api/activation').then(function (d) {
+      var rows = d.pending || [];
+      if (!rows.length) { $('apPending').textContent = 'Nenhum player aguardando ativação.'; return; }
+      $('apPending').innerHTML = 'Aguardando: ' + rows.map(function (r) {
+        return '<a href="#" data-code="' + esc(r.code) + '" style="font-family:ui-monospace,monospace">' + esc(r.code) + '</a>';
+      }).join(' · ');
+      [].forEach.call($('apPending').querySelectorAll('a'), function (a) {
+        a.onclick = function (e) { e.preventDefault(); $('apCodeIn').value = a.dataset.code; };
+      });
+    }).catch(function () { $('apPending').textContent = ''; });
+  }
+  $('addPlayerBtn').onclick = function () { openActivate(null); };
+  $('plActivateBtn').onclick = function () { openActivate(state.activePlaylist); };
+  $('apClose').onclick = function () { clearInterval(apPending); $('addPlayerModal').classList.add('hidden'); };
+  $('apRedeem').onclick = function () {
+    var code = $('apCodeIn').value.trim().toUpperCase();
+    if (!code) { log('informe o código do player'); return; }
+    var body = { code: code };
+    if ($('apPlaylist').value) body.playlist_id = Number($('apPlaylist').value);
     if ($('apName').value.trim()) body.name = $('apName').value.trim();
     if ($('apGroup').value) body.group_id = Number($('apGroup').value);
-    jpost('/api/pair/requests', body).then(function (d) {
+    jpost('/api/activation/redeem', body).then(function (d) {
       $('apForm').classList.add('hidden'); $('apResult').classList.remove('hidden');
-      $('apCode').textContent = d.request.code;
-      $('apProv').innerHTML = '<b>' + esc(d.provisioning.type) + '</b> · ' + esc(d.provisioning.method) + '<br>' +
-        (d.provisioning.steps || []).map(esc).join('<br>');
-      $('apWait').textContent = 'Aguardando o player parear…';
-      log('codigo de pareamento ' + d.request.code + ' gerado');
-      clearInterval(apPoll);
-      apPoll = setInterval(function () {
-        api('/api/pair/requests/' + d.request.id).then(function (r) {
-          if (r.request.status === 'consumed') {
-            clearInterval(apPoll);
-            $('apWait').textContent = 'Pareado: ' + (r.request.device ? r.request.device.serial : 'ok') + ' ✓';
-            log('player pareado: ' + (r.request.device ? r.request.device.serial : ''));
-            loadGroups().then(loadDevices);
-          } else if (r.request.status !== 'pending') {
-            clearInterval(apPoll); $('apWait').textContent = 'Solicitacao ' + r.request.status;
-          }
-        });
-      }, 3000);
-    }).catch(function (e) { log('add player: ' + e.message); });
+      clearInterval(apPending);
+      var nm = d.device.name || d.device.serial;
+      $('apWait').textContent = 'Player ' + nm + ' ativado ✓' + (d.playlist_id ? ' — nesta playlist já vai começar a tocar.' : '');
+      log('player ativado: ' + nm + (d.playlist_id ? ' → playlist #' + d.playlist_id : ''));
+      loadGroups().then(loadDevices);
+      loadPlaylists();
+      setTimeout(function () { $('addPlayerModal').classList.add('hidden'); }, 2200);
+    }).catch(function (e) { log('ativar: ' + (e.body && e.body.error || e.message)); });
   };
+  $('apCodeIn') && ($('apCodeIn').onkeydown = function (e) { if (e.key === 'Enter') $('apRedeem').click(); });
 
   // ---- M5: administracao ----
   function can(perm) {
