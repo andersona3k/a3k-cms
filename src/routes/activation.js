@@ -160,6 +160,7 @@ router.post('/redeem', (req, res) => {
       playerType: row.player_type,
       name: (b.name || '').trim() || null,
       groupId,
+      orientation: b.orientation,
     }).device;
     if (playlistId) {
       db.prepare(

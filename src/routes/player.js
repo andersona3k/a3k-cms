@@ -200,6 +200,19 @@ router.post('/devices/:id/heartbeat', requireDevice, (req, res) => {
   });
 });
 
+// POST /api/devices/:id/orientation  { rotate90?:true, orientation?:0|90|180|270 }
+// usado pelo F2 do player Android. O player pega o novo valor no próximo manifest.
+router.post('/devices/:id/orientation', requireDevice, (req, res) => {
+  const db = getDb();
+  const b = req.body || {};
+  const cur = [0, 90, 180, 270].includes(req.device.orientation) ? req.device.orientation : 0;
+  let next = cur;
+  if (b.rotate90) next = (cur + 90) % 360;
+  else if ([0, 90, 180, 270].includes(Number(b.orientation))) next = Number(b.orientation);
+  db.prepare(`UPDATE devices SET orientation = ?, updated_at = datetime('now') WHERE id = ?`).run(next, req.device.id);
+  res.json({ ok: true, orientation: next });
+});
+
 // GET /api/devices/:id/comm-check  — ping barato p/ as 4 tentativas do log
 router.get('/devices/:id/comm-check', requireDevice, (req, res) => {
   res.set('Cache-Control', 'no-store');

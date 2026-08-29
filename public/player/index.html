@@ -121,7 +121,9 @@
   var advanceTimer = null;
   var activeSig = '';   // assinatura do subconjunto ativo, p/ detectar mudanca
   var manifestName = null;
-  var plRotation = 0, plMirror = 0;   // orientacao padrao da playlist
+  var plRotation = 0, plMirror = 0;   // rotacao do CONTEUDO (playlist)
+  var deviceRotation = 0;             // rotacao da TELA (device) — vem no manifest
+  function combineRot(base) { return ((deviceRotation + (Number(base) || 0)) % 360 + 360) % 360; }
   var objUrls = [];     // object URLs em uso no #stage (revogados na troca)
   var dlMsg = '';       // progresso do download offline (mostrado no badge)
   var activation = null;
@@ -437,7 +439,8 @@
     manifestName = m.playlist ? m.playlist.name : null;
     plRotation = Number(m.rotation) || 0;
     plMirror = m.mirror ? 1 : 0;
-    applyOrient(statusEl, plRotation, plMirror);
+    if (m.deviceRotation != null) deviceRotation = Number(m.deviceRotation) || 0;
+    applyOrient(statusEl, combineRot(plRotation), plMirror);
     metaPut('manifest', m).catch(function () {});
     recomputeActive(true);
     syncMedia(allItems).catch(function () {});
@@ -509,7 +512,7 @@
 
     applyOrient(
       stage,
-      item.rotation != null ? Number(item.rotation) : plRotation,
+      combineRot(item.rotation != null ? Number(item.rotation) : plRotation),
       item.mirror != null ? item.mirror : plMirror
     );
 
@@ -695,6 +698,19 @@
       badge.textContent = (device.serial || '') + ' · offline · ' + (e && e.message || e) + ' · p' + PLAYER_VERSION;
     });
   }
+  // usado pelo F2 do app Android (após girar a tela no servidor): força re-fetch
+  window.__a3kPoll = function () { currentVersion = -1; poll(); };
+  // F2 do Android: gira a TELA (orientação do device, no servidor) 90° horário
+  window.__a3kRotate = function () {
+    if (!device.token) return;
+    fetch(API + '/api/devices/' + device.id + '/orientation', {
+      method: 'POST', headers: Object.assign({ 'content-type': 'application/json' }, auth()),
+      body: JSON.stringify({ rotate90: true }),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.orientation != null) { deviceRotation = Number(d.orientation) || 0; }
+      currentVersion = -1; poll();
+    }).catch(function () {});
+  };
 
   function start() {
     serialEl.textContent = device.serial || '…';

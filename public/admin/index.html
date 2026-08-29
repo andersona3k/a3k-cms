@@ -552,6 +552,13 @@
       <div id="apPending" class="muted" style="font-size:12px;margin:4px 0"></div>
       <label>Playlist</label>
       <select id="apPlaylist"><option value="">(atribuir depois)</option></select>
+      <label>Orientação da tela</label>
+      <select id="apOrient">
+        <option value="0">Paisagem</option>
+        <option value="90">Retrato (girado 90° horário)</option>
+        <option value="270">Retrato invertido (270°)</option>
+        <option value="180">Paisagem invertida (180°)</option>
+      </select>
       <label>Nome (opcional)</label><input id="apName" placeholder="TV Recepcao" />
       <label>Grupo (opcional)</label><select id="apGroup"></select>
       <div style="margin-top:12px"><button id="apRedeem">Ativar</button></div>
@@ -2449,7 +2456,15 @@
       row('No player', (dev.last_version != null ? 'v' + dev.last_version : '—') +
         (dev.last_version_at ? ' <span class="muted">(' + fmtAgo(dev.last_version_at) + ')</span>' : '')) +
       row('Playlist efetiva', eff ? esc(eff.name) + ' <span class="muted">(' + (eff.source === 'group' ? 'do grupo' : 'própria') + ')</span>' : 'nenhuma');
-    var info = '<div style="margin-bottom:8px">' + pbarHtml(dev) + '</div><dl>' + infoRows + '</dl>' +
+    var oriLabels = { 0: 'Paisagem', 90: 'Retrato 90°', 270: 'Retrato 270°', 180: 'Invertida 180°' };
+    var curOri = [0, 90, 180, 270].indexOf(dev.orientation) >= 0 ? dev.orientation : 0;
+    var oriBlock = '<div style="margin-top:8px"><span class="muted" style="font-size:11px">Orientação da tela</span>' +
+      '<div class="row" style="gap:6px;margin-top:4px">' +
+      [0, 90, 270, 180].map(function (d) {
+        return '<span class="dmpill' + (d === curOri ? ' on' : '') + '" data-ori="' + d + '">' + oriLabels[d] + '</span>';
+      }).join('') + '</div>' +
+      '<p class="muted" style="font-size:11px;margin-top:4px">Vale para este device (a instalação). O player aplica no próximo poll. F2 no teclado gira 90°.</p></div>';
+    var info = '<div style="margin-bottom:8px">' + pbarHtml(dev) + '</div><dl>' + infoRows + '</dl>' + oriBlock +
       '<div id="dmForm" class="hidden" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">' +
         '<label>Nome</label><input id="dmName">' +
         '<label>Grupo</label><span id="dmGroupWrap"></span>' +
@@ -2560,6 +2575,13 @@
           .catch(function (e) { log('intervalo: ' + (e.body && e.body.error || e.message)); });
       };
     });
+    body.querySelectorAll('[data-ori]').forEach(function (p) {
+      p.onclick = function () {
+        jpost('/api/devices/' + dev.id, { orientation: Number(p.dataset.ori) }, 'PATCH')
+          .then(function () { log('orientação da tela: ' + p.dataset.ori + '°'); loadDevices(); openDevModal(dev.id); })
+          .catch(function (e) { log('orientação: ' + (e.body && e.body.error || e.message)); });
+      };
+    });
     body.querySelectorAll('[data-cmd]').forEach(function (b) {
       b.onclick = function () { sendDevCommand(dev.id, b.dataset.cmd, b); };
     });
@@ -2662,6 +2684,7 @@
     $('apPlayerUrl').textContent = API + '/player/';
     $('apCodeIn').value = '';
     $('apName').value = '';
+    $('apOrient').value = '0';
     var gsel = $('apGroup'); gsel.innerHTML = '<option value="">— sem grupo</option>';
     (state.groups || []).forEach(function (g) {
       var o = document.createElement('option'); o.value = g.id; o.textContent = g.name; gsel.appendChild(o);
@@ -2701,6 +2724,7 @@
     if ($('apPlaylist').value) body.playlist_id = Number($('apPlaylist').value);
     if ($('apName').value.trim()) body.name = $('apName').value.trim();
     if ($('apGroup').value) body.group_id = Number($('apGroup').value);
+    body.orientation = Number($('apOrient').value) || 0;
     jpost('/api/activation/redeem', body).then(function (d) {
       $('apForm').classList.add('hidden'); $('apResult').classList.remove('hidden');
       clearInterval(apPending);

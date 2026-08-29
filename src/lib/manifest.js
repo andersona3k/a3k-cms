@@ -98,6 +98,7 @@ function buildPlaylistManifest(playlist, activeAt, target) {
 function buildManifest(device) {
   const db = getDb();
   const playlistId = resolvePlaylistId(db, device);
+  const deviceRotation = [0, 90, 180, 270].includes(device.orientation) ? device.orientation : 0;
 
   if (!playlistId) {
     return {
@@ -107,6 +108,7 @@ function buildManifest(device) {
       version: 0,
       rotation: 0,
       mirror: 0,
+      deviceRotation,
       generatedAt: new Date().toISOString(),
       items: [],
     };
@@ -116,6 +118,7 @@ function buildManifest(device) {
   return {
     deviceId: device.id,
     serial: device.serial,
+    deviceRotation,
     ...buildPlaylistManifest(playlist, undefined, {
       groupId: device.group_id || null,
       deviceId: device.id,

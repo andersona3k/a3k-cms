@@ -151,28 +151,6 @@ class PlayerActivity : AppCompatActivity() {
         webView = wv
         wv.loadUrl(Prefs.playerUrl(this))
         Log.i(TAG, "carregando ${Prefs.playerUrl(this)}")
-        container.post { applyManualRotation() }
-    }
-
-    /**
-     * F2: rotaciona a VIEW do WebView (nao o requestedOrientation). Passo de 90°
-     * horario, deterministico, imune ao sensor/ROM. Para 90/270 troca w<->h e
-     * centraliza. Persistente (Prefs.manual_rot).
-     */
-    private fun applyManualRotation() {
-        val wv = webView ?: return
-        val steps = Prefs.manualRotation(this)
-        val w = container.width
-        val h = container.height
-        if (w == 0 || h == 0) { container.post { applyManualRotation() }; return }
-        wv.layoutParams = if (steps % 2 == 1) {
-            FrameLayout.LayoutParams(h, w).apply { gravity = Gravity.CENTER }
-        } else {
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-        }
-        wv.rotation = steps * 90f
-        // informa o player web (opcional; para log/diagnostico do lado do HTML)
-        wv.evaluateJavascript("window.__a3kDeviceRotation=${steps * 90};", null)
     }
 
     private fun onCornerTap(ev: MotionEvent) {
@@ -218,7 +196,6 @@ class PlayerActivity : AppCompatActivity() {
         super.onResume()
         val want = Prefs.requestedOrientation(this)
         if (requestedOrientation != want) requestedOrientation = want
-        container.post { applyManualRotation() }
         Watchdog.arm(this)
         Watchdog.beat()
         ui.removeCallbacks(beat)
@@ -230,7 +207,6 @@ class PlayerActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         requestedOrientation = Prefs.requestedOrientation(this)
         webView?.loadUrl(Prefs.playerUrl(this))
-        container.post { applyManualRotation() }
     }
 
     override fun onPause() {
@@ -275,11 +251,15 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
 
-    /** F2: gira o conteudo 90° horario a cada toque (view-based, persistente). */
+    /**
+     * F2: gira a TELA 90° horario. A orientação agora é do DEVICE (servidor).
+     * Chama window.__a3kRotate() no player web — ele tem device.id + token, faz
+     * POST /orientation {rotate90} e re-busca o manifest (aplica via CSS). Vale
+     * igual no browser e no Android e persiste central (sobrevive reinstalação).
+     */
     private fun rotate90cw() {
-        Prefs.setManualRotation(this, Prefs.manualRotation(this) + 1)
-        applyManualRotation()
-        Toast.makeText(this, "Tela girada", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Girando a tela…", Toast.LENGTH_SHORT).show()
+        webView?.evaluateJavascript("window.__a3kRotate && window.__a3kRotate()", null)
     }
 
     /** F1: pede a senha; ok -> fecha o app. 15s sem acao -> some e segue tocando. */

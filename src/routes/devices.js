@@ -109,6 +109,11 @@ router.patch('/:id', (req, res) => {
   }
   const newGroup = b.group_id !== undefined ? (b.group_id || null) : undefined;
   if (newGroup !== undefined) { sets.push('group_id = ?'); vals.push(newGroup); }
+  if (b.orientation !== undefined) {
+    const v = Number(b.orientation);
+    if (![0, 90, 180, 270].includes(v)) return res.status(400).json({ error: 'orientation invalida (0/90/180/270)' });
+    sets.push('orientation = ?'); vals.push(v);
+  }
   if (b.screenshot_interval !== undefined) {
     const v = Number(b.screenshot_interval);
     if (!SHOT_INTERVALS.includes(v)) return res.status(400).json({ error: 'screenshot_interval invalido (1/5/10/30/60)' });
