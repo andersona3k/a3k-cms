@@ -273,11 +273,15 @@ public/
                        alvo x versao no player, mover de grupo + playlist propria
                        com "Salvar", e as ultimas 5 mudancas (activity_log) com
                        o e-mail de quem fez. "+ Grupo" / "+ Dispositivo" na toolbar.
-                       Aba Biblioteca = tela cheia, 3 colunas: menu de pastas em
-                       arvore ("Geral" garantida na raiz; subpastas ate 3 niveis;
-                       "+ pasta" cria DENTRO da selecionada) | grade de arquivos
-                       (miniatura real p/ imagem E video via thumb_url, glifo p/
-                       audio) | visualizador fixo #libPreview. Botao "+ enviar
+                       Aba Biblioteca = sub-abas (#libSubnav: Arquivos [atual] ·
+                       Layout · PPT · Texto · Visao [placeholders]). "Arquivos" =
+                       tela cheia, 3 colunas: menu de pastas em arvore ("Geral"
+                       garantida na raiz; subpastas ate 3 niveis; "+ pasta" cria
+                       DENTRO da selecionada; arrasta o tile do arquivo e solta
+                       numa pasta -> muda folder_id) | grade de arquivos (miniatura
+                       real p/ imagem E video via thumb_url — backfill no boot p/
+                       videos antigos; glifo p/ audio) | visualizador fixo
+                       #libPreview. Botao "+ enviar
                        arquivo" abre o seletor e ja envia (multiplo, fila) p/ a
                        pasta ativa. Visualizador = 2 blocos <details> recolhiveis:
                        "Detalhes do arquivo" (campos enxutos por tipo, bitrate em
@@ -325,7 +329,7 @@ raiz "Projeto".
 `assets` ganhou `format`, `metadata` (dump cru do probe), `probe_status`
 (`pending`/`ok`/`error`/`skipped`) e `probe_error` no M2; `thumb_url` (migration
 009) = poster de video (`ffmpeg` extrai 1 frame no probe -> `media/<hash>.thumb.jpg`,
-servido em `/assets/`); `schedule` (JSON: validade data+hora / dias / horario 24h),
+servido em `/assets/`; `backfillVideoThumbs()` gera p/ videos antigos no boot do server); `schedule` (JSON: validade data+hora / dias / horario 24h),
 `created_by`, `history` (JSON, ultimas 10 modificacoes) na migration 010 —
 `GET /api/assets/:id` devolve tambem `playlists` que usam o asset; `PATCH` valida
 `schedule` via `src/lib/assetSchedule.js` e acrescenta ao `history`.

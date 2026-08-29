@@ -120,4 +120,34 @@ function deleteAssetFileIfOrphan(db, asset) {
   if (fs.existsSync(thumbAbs)) fs.rmSync(thumbAbs);
 }
 
-module.exports = { storedNameOf, absPathOf, applyProbeToAsset, deleteAssetFileIfOrphan };
+// Gera a miniatura (poster) dos videos que ainda nao tem thumb_url.
+// Roda no boot do server (best-effort, nao bloqueia).
+async function backfillVideoThumbs(db, { silent = true } = {}) {
+  const rows = db
+    .prepare(
+      `SELECT id, hash, url FROM assets
+        WHERE type = 'video' AND probe_status = 'ok'
+          AND (thumb_url IS NULL OR thumb_url = '')`
+    )
+    .all();
+  let done = 0;
+  for (const a of rows) {
+    try {
+      const thumbName = `${a.hash}.thumb.jpg`;
+      const thumbAbs = path.join(config.mediaDir, thumbName);
+      if (!fs.existsSync(thumbAbs) || fs.statSync(thumbAbs).size === 0) {
+        await extractPoster(absPathOf(a.url), thumbAbs);
+      }
+      if (fs.existsSync(thumbAbs) && fs.statSync(thumbAbs).size > 0) {
+        db.prepare('UPDATE assets SET thumb_url = ? WHERE id = ?').run(`/assets/${thumbName}`, a.id);
+        done++;
+      }
+    } catch (err) {
+      if (!silent) console.warn('[backfill] poster falhou p/ asset', a.id, String(err.message || err).slice(0, 120));
+    }
+  }
+  if (!silent || done) console.log(`[backfill] miniaturas de video: ${done}/${rows.length}`);
+  return { total: rows.length, done };
+}
+
+module.exports = { storedNameOf, absPathOf, applyProbeToAsset, deleteAssetFileIfOrphan, backfillVideoThumbs };

@@ -150,7 +150,7 @@
   #plListTbl td, #plListTbl th { font-size:12px; }
   #plListTbl tbody tr { cursor:grab; }
   #plListTbl tbody tr:hover { background:#1b2733; }
-  #plTree .fnode.dragover { outline:2px dashed var(--acc); outline-offset:-2px; background:#1b2c3f; }
+  .fnode.dragover { outline:2px dashed var(--acc); outline-offset:-2px; background:#1b2c3f; }
   #plListTbl .rowacts { display:flex; gap:5px; flex-wrap:wrap; }
   #plListTbl .rowacts button { padding:4px 8px; font-size:11px; }
   .pstat { font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; white-space:nowrap; }
@@ -162,8 +162,14 @@
   #plEditModal .modalBox { width:min(980px,95vw); max-height:92vh; overflow:auto; }
   #plEditModal .modalBox select, #plEditModal .modalBox input { width:auto; }
   .assetgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:12px; }
-  .atile { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#0d141c; cursor:pointer; }
+  .atile { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#0d141c; cursor:grab; }
   .atile:hover { border-color:var(--acc); }
+  #libSubnav { display:flex; gap:4px; flex-wrap:wrap; margin:0 0 14px; border-bottom:1px solid var(--line); padding-bottom:8px; }
+  #libSubnav button { background:transparent; border:1px solid var(--line); color:var(--mut);
+    border-radius:7px; padding:6px 13px; font-size:12px; font-weight:600; cursor:pointer; }
+  #libSubnav button:hover { color:var(--fg); }
+  #libSubnav button.active { background:var(--acc); border-color:var(--acc); color:#fff; }
+  #libSubStub { padding:40px 16px; text-align:center; color:var(--mut); }
   .atile .thumb { height:96px; display:flex; align-items:center; justify-content:center; background:#000; font-size:34px; }
   .atile .thumb img { width:100%; height:100%; object-fit:cover; }
   .atile .aname { padding:6px 8px 2px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -218,6 +224,14 @@
 <main id="appView" class="hidden">
   <div class="card tabpane" id="pane-biblioteca">
     <h2>Biblioteca</h2>
+    <nav id="libSubnav">
+      <button data-sub="arquivos" class="active">Arquivos</button>
+      <button data-sub="layout">Layout</button>
+      <button data-sub="ppt">PPT</button>
+      <button data-sub="texto">Texto</button>
+      <button data-sub="visao">Visão</button>
+    </nav>
+    <div id="libSubStub" class="hidden"></div>
     <div id="libWrap">
       <div id="libTree">
         <div class="thead"><b>Pastas</b>
@@ -504,11 +518,34 @@
       $('logBar').addEventListener('toggle', function () {
         this.querySelector('summary').firstChild.nodeValue = (this.open ? '▾ ' : '▸ ') + 'Log';
       });
+      var subBtns = $('libSubnav').querySelectorAll('button[data-sub]');
+      for (var s = 0; s < subBtns.length; s++) {
+        (function (b) { b.onclick = function () { showLibSub(b.getAttribute('data-sub')); }; })(subBtns[s]);
+      }
+      var savedSub = '';
+      try { savedSub = localStorage.getItem('a3k_lib_sub') || ''; } catch (e) {}
+      showLibSub(savedSub || 'arquivos');
     }
     var saved = '';
     try { saved = localStorage.getItem('a3k_admin_tab') || ''; } catch (e) {}
     _bootTab = location.hash.slice(1) || saved || 'pane-biblioteca';
     showTab(_bootTab);
+  }
+  var LIB_SUBS = { arquivos: 'Arquivos', layout: 'Layout', ppt: 'PPT', texto: 'Texto', visao: 'Visão' };
+  function showLibSub(name) {
+    if (!LIB_SUBS[name]) name = 'arquivos';
+    var btns = $('libSubnav').querySelectorAll('button[data-sub]');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('active', btns[i].getAttribute('data-sub') === name);
+    }
+    var isArq = name === 'arquivos';
+    $('libWrap').classList.toggle('hidden', !isArq);
+    $('libSubStub').classList.toggle('hidden', isArq);
+    if (!isArq) {
+      $('libSubStub').innerHTML = '<p style="font-size:15px">🚧 <b>' + esc(LIB_SUBS[name]) + '</b></p>' +
+        '<p class="muted">Em construção — em breve.</p>';
+    }
+    try { localStorage.setItem('a3k_lib_sub', name); } catch (e) {}
   }
   $('loginBtn').onclick = function () {
     jpost('/api/auth/login', { email: $('email').value, password: $('password').value })
@@ -557,6 +594,7 @@
       n.className = 'fnode' + (state.currentFolder === '' ? ' sel' : '');
       n.innerHTML = '<span class="fname">🗂️ (sem pasta)</span><span class="fcount">' + unf + '</span>';
       n.onclick = function () { selectFolder(''); };
+      wireAssetDrop(n, null);
       li.appendChild(n); rootUl.appendChild(li);
     }
     $('libCrumb').innerHTML = state.currentFolder === ''
@@ -584,6 +622,7 @@
     delb.onclick = function (e) { e.stopPropagation(); deleteFolder(f); };
     n.appendChild(delb);
     n.onclick = function () { selectFolder(String(f.id)); };
+    wireAssetDrop(n, f.id);
     li.appendChild(n);
     var kids = folderChildren(f.id);
     if (kids.length) {
@@ -597,6 +636,27 @@
   function clearPreview() {
     state.selectedAsset = null;
     if ($('libPreview')) $('libPreview').innerHTML = '<p class="muted">Clique num arquivo para ver aqui.</p>';
+  }
+
+  // arrasta um arquivo da grade e solta numa pasta da arvore -> muda folder_id
+  var _dragAssetId = null;
+  function moveAssetToFolder(assetId, folderId) {
+    var a = (state.assets || []).find(function (x) { return x.id === Number(assetId); });
+    if (a && (a.folder_id || null) === (folderId || null)) return;
+    jpost('/api/assets/' + assetId, { folder_id: folderId || null }, 'PATCH')
+      .then(function () { log('arquivo #' + assetId + ' movido'); loadFolders().then(loadAssets); })
+      .catch(function (e) { log('mover: ' + e.message); });
+  }
+  function wireAssetDrop(el, folderId) {
+    el.addEventListener('dragover', function (e) {
+      if (_dragAssetId == null) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move'; el.classList.add('dragover');
+    });
+    el.addEventListener('dragleave', function () { el.classList.remove('dragover'); });
+    el.addEventListener('drop', function (e) {
+      e.preventDefault(); el.classList.remove('dragover');
+      if (_dragAssetId != null) moveAssetToFolder(_dragAssetId, folderId);
+    });
   }
   function createFolder(parentId) {
     var name = (prompt(parentId ? 'Nome da subpasta' : 'Nome da nova pasta') || '').trim();
@@ -727,6 +787,14 @@
         var tile = document.createElement('div');
         tile.className = 'atile' + (String(state.selectedAsset) === String(a.id) ? ' sel' : '');
         tile.dataset.id = a.id;
+        tile.draggable = true;
+        tile.title = 'arraste para uma pasta ao lado';
+        tile.addEventListener('dragstart', function (e) {
+          _dragAssetId = a.id; e.dataTransfer.effectAllowed = 'move';
+          try { e.dataTransfer.setData('text/plain', 'asset:' + a.id); } catch (er) {}
+          tile.style.opacity = '0.5';
+        });
+        tile.addEventListener('dragend', function () { _dragAssetId = null; tile.style.opacity = ''; });
         tile.innerHTML =
           '<div class="thumb" data-glyph="' + assetGlyph(a.type) + '">' + thumbHtml(a) + '</div>' +
           '<div class="aname" title="' + esc(a.filename) + '">' + esc(a.filename) + '</div>' +
