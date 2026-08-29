@@ -29,8 +29,9 @@ function resolvePlaylistId(db, device) {
 
 // Itens de uma playlist no formato do manifest (mesmo shape p/ device e preview).
 // `activeAt` (Date) opcional: filtra pelo day-parting naquele instante.
-// `groupId` (number|null) opcional: quando passado, aplica a regra de grupo do item.
-function playlistManifestItems(db, playlistId, activeAt, groupId) {
+// `target` ({groupId,deviceId}) opcional: quando passado, aplica a regra de
+// "Reprodução" (Sim/Não) do item — preview do admin passa undefined (mostra tudo).
+function playlistManifestItems(db, playlistId, activeAt, target) {
   // itens suspensos nunca entram no manifest.
   const rows = db
     .prepare(
@@ -65,8 +66,8 @@ function playlistManifestItems(db, playlistId, activeAt, groupId) {
     };
   });
 
-  if (groupId !== undefined) {
-    items = items.filter((it) => groupRuleAllows(it._groupRule, groupId));
+  if (target !== undefined) {
+    items = items.filter((it) => groupRuleAllows(it._groupRule, target));
   }
   items.forEach((it) => { delete it._groupRule; });
 
@@ -77,8 +78,9 @@ function playlistManifestItems(db, playlistId, activeAt, groupId) {
 }
 
 // Manifest de uma playlist isolada (usado pelo preview do admin).
-// `groupId` passado so no manifest de device -> aplica as regras de grupo por item.
-function buildPlaylistManifest(playlist, activeAt, groupId) {
+// `target` ({groupId,deviceId}) passado so no manifest de device -> aplica a
+// regra de "Reprodução" por item.
+function buildPlaylistManifest(playlist, activeAt, target) {
   const db = getDb();
   return {
     playlist: { id: playlist.id, name: playlist.name },
@@ -88,7 +90,7 @@ function buildPlaylistManifest(playlist, activeAt, groupId) {
     suspended: playlist.suspended ? 1 : 0,
     generatedAt: new Date().toISOString(),
     // playlist suspensa -> nao entrega nada (o player fica em "nada programado")
-    items: playlist.suspended ? [] : playlistManifestItems(db, playlist.id, activeAt, groupId),
+    items: playlist.suspended ? [] : playlistManifestItems(db, playlist.id, activeAt, target),
   };
 }
 
@@ -114,7 +116,10 @@ function buildManifest(device) {
   return {
     deviceId: device.id,
     serial: device.serial,
-    ...buildPlaylistManifest(playlist, undefined, device.group_id || null),
+    ...buildPlaylistManifest(playlist, undefined, {
+      groupId: device.group_id || null,
+      deviceId: device.id,
+    }),
   };
 }
 

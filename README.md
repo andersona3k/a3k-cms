@@ -132,13 +132,20 @@ Sem metadados (ffprobe/sharp fica no M2), sem drag-drop (M3), sem grupos (M4).
   personalizada no item sobrepoe sem tocar no arquivo. Editor: bloco "Condicional"
   com radio "Da biblioteca" (so quando o asset tem uma) vs "Personalizada"
   (data+hora / dias / horario 24h, salva em `playlist_items.schedule`).
-- **Reproducao por grupo** (`playlist_items.group_rule` JSON, migration 013):
-  `null` = todos os grupos exibem; `{mode:'allow',groups:[ids]}` = SO esses grupos
-  exibem o item; `{mode:'deny',groups:[ids]}` = esses grupos pulam, os demais
-  exibem. `src/lib/groupRule.js` (`validateGroupRule` / `groupRuleAllows`);
-  `buildManifest` filtra por `device.group_id`, o preview do admin (sem grupo)
-  mostra tudo. Editor: bloco "Reproducao" (escolhe grupos + radio Reproduzir/
-  Nao reproduzir).
+- **Reproducao — dois lados** (`playlist_items.group_rule` JSON, migration 013):
+  ```
+  null                                              -> todos exibem (sem filtro)
+  { allow: { groups:[ids], devices:[ids] },          -> SIM: so estes exibem
+    deny:  { groups:[ids], devices:[ids] } }          -> NAO: estes pulam o item
+  ```
+  Um alvo (grupo ou player) fica so num lado. Resolucao por device D (grupo G):
+  em `deny` -> nao exibe; senao, se `allow` tem algo -> exibe so quem esta em
+  `allow`; senao -> exibe. `src/lib/groupRule.js` (`validateGroupRule` /
+  `groupRuleAllows(rule,{groupId,deviceId})`; aceita tambem o formato antigo
+  `{mode,groups}`). `buildManifest` passa `{groupId,deviceId}` do device; o
+  preview do admin (sem alvo) mostra tudo. Editor: bloco "Reproducao" com toggle
+  **Por grupo** (lote — joga os players do grupo no lado escolhido) / **Por
+  player** (1 a 1), colunas SIM / NAO com chips removiveis.
 
 ### Fase 3 — apps nativos (em andamento)
 
@@ -326,8 +333,8 @@ public/
                        imagem + ✕/⊘/🕐. Clicar num quadro abre #pliBlocks (3
                        colunas): "Detalhes do arquivo" (dados da Biblioteca),
                        "Condicional" (radio Da biblioteca vs Personalizada ->
-                       playlist_items.schedule), "Reproducao" (grupos + radio
-                       Reproduzir / Nao reproduzir -> playlist_items.group_rule).
+                       playlist_items.schedule), "Reproducao" (toggle Por grupo /
+                       Por player + colunas SIM/NAO -> playlist_items.group_rule).
                        "+ adicionar conteudo" abre #plAddModal (tela
                        quase cheia): 4 colunas = arvore de pastas (Explorer) |
                        Repositorio (miniaturas QUADRADAS, auto-fill) | meio |
@@ -351,7 +358,7 @@ node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m15.test.js  testes de aceite (143 no total)
+  m0..m15.test.js  testes de aceite (145 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`
@@ -369,8 +376,8 @@ superadmin) grava `media/logo-c<id>.<ext>` servido em `/assets/`. `GET
 `playlists` (com `version`; migration 011 add `folder_id`, `created_by`,
 `valid_from`/`valid_until` [YYYY-MM-DD], `suspended`, `archived`),
 `playlist_folders` (arvore, 011), `playlist_items` (`schedule` JSON de day-parting
-M6 — null herda `assets.schedule`; `group_rule` JSON `{mode:'allow'|'deny',groups:[]}`
-na migration 013).
+M6 — null herda `assets.schedule`; `group_rule` JSON `{allow:{groups,devices},
+deny:{groups,devices}}` na migration 013 — Sim/Nao por grupo ou player).
 `GET /api/playlists` calcula `content_type` (video/imagem/mix), `total_duration`,
 `total_bytes` (soma dos `size_bytes` dos assets distintos), `assigned` e `status`
 (vencida/em_uso/planejada). `PATCH { name }` renomeia (409 em colisao). Playlist `suspended` -> manifest

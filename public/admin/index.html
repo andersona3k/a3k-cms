@@ -193,6 +193,13 @@
   .pliblk-b .chip { display:inline-flex; align-items:center; gap:4px; background:#1b2c3f; border:1px solid var(--line);
     border-radius:999px; padding:2px 8px; font-size:11px; margin:2px 4px 2px 0; }
   .pliblk-b .chip button { border:0; background:transparent; color:var(--mut); cursor:pointer; padding:0; font-size:12px; }
+  .pliblk-b .chip.chip-grp { background:#22344a; font-weight:600; }
+  .pliblk-b .chip .gh { color:var(--mut); font-size:10px; }
+  .prcols { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:8px 0; }
+  .prcol { border:1px solid var(--line); border-radius:8px; background:#0d141c; display:flex; flex-direction:column; }
+  .prcol-h { font-size:10px; text-transform:uppercase; letter-spacing:.5px; padding:5px 7px; border-bottom:1px solid var(--line); }
+  .prcol-sim .prcol-h { color:#5fd08a; } .prcol-nao .prcol-h { color:#e8776b; }
+  .prcol-b { padding:6px; display:flex; flex-wrap:wrap; gap:2px; align-content:flex-start; min-height:40px; }
   .pli.sel { outline:2px solid var(--acc); outline-offset:-2px; }
   @media (max-width:960px) { #pliBlocks { grid-template-columns:1fr; } }
 
@@ -585,7 +592,7 @@
   var token = localStorage.getItem('a3k_admin_token') || '';
   var state = { assets: [], playlists: [], folders: [], groups: [], roles: [], me: null,
     companyCtx: '', activePlaylist: null, currentFolder: '', selectedAsset: null,
-    plFolders: [], plCurrentFolder: null };
+    plFolders: [], plCurrentFolder: null, devices: [], _devLoaded: false };
 
   var $ = function (id) { return document.getElementById(id); };
   function log(m) { $('log').textContent = '[' + new Date().toLocaleTimeString() + '] ' + m + '\n' + $('log').textContent; }
@@ -1436,6 +1443,8 @@
     state.activePlaylist = id;
     _plNameEditing = false;
     _pliSel = null; clearPliBlocks();
+    if (!(state.groups && state.groups.length)) loadGroups();
+    ensureDevices();
     var p = (state.playlists || []).find(function (x) { return x.id === id; }) || { id: id, name: '#' + id };
     renderPlEditName(p);
     $('plRotation').value = oriValue(p);
@@ -1666,43 +1675,117 @@
     });
   }
 
-  // ---- reproducao: regra de grupo (allow = só esses / deny = todos menos esses) ----
+  // ---- reproducao: dois lados (Sim = so estes / Nao = todos menos estes) ----
+  //  filtro por GRUPO (lote: joga os players do grupo no lado) ou por PLAYER (1 a 1).
+  function repDevLabel(id) {
+    var d = (state.devices || []).find(function (x) { return x.id === id; });
+    if (!d) return '#' + id;
+    var g = d.group_id && (state.groups || []).find(function (x) { return x.id === d.group_id; });
+    return esc(d.name || d.serial || ('#' + id)) + (g ? ' <span class="gh">· ' + esc(g.name) + '</span>' : '');
+  }
+  function repGrpLabel(id) {
+    var g = (state.groups || []).find(function (x) { return x.id === id; });
+    return esc(g ? g.name : ('#' + id));
+  }
+  function parseRepRule(gr) {
+    var w = { allow: { groups: [], devices: [] }, deny: { groups: [], devices: [] } };
+    if (gr && typeof gr === 'object') {
+      if (gr.allow || gr.deny) {
+        ['allow', 'deny'].forEach(function (k) {
+          var s = gr[k] || {};
+          w[k].groups = (s.groups || []).slice();
+          w[k].devices = (s.devices || []).slice();
+        });
+      } else if (gr.mode === 'allow' || gr.mode === 'deny') {
+        w[gr.mode].groups = (gr.groups || []).slice();
+      }
+    }
+    return w;
+  }
   function renderPliRep(it) {
     var b = $('pliRepBlock');
-    var gr = it.group_rule || {};
-    var work = { mode: gr.mode === 'deny' ? 'deny' : 'allow', groups: (gr.groups || []).slice() };
-    function paint() {
-      var grpOpts = (state.groups || []).map(function (g) { return '<option value="' + g.id + '">' + esc(g.name) + '</option>'; }).join('');
-      var chips = work.groups.map(function (id) {
-        var g = (state.groups || []).find(function (x) { return x.id === id; });
-        return '<span class="chip">' + esc(g ? g.name : ('#' + id)) + ' <button data-id="' + id + '">✕</button></span>';
-      }).join('') || '<span class="muted" style="font-size:11px">nenhum grupo</span>';
-      b.innerHTML =
-        '<label class="radiorow"><input type="radio" name="pliRepMode" value="allow"' + (work.mode === 'allow' ? ' checked' : '') + '> Reproduzir <b>apenas</b> nos grupos</label>' +
-        '<label class="radiorow"><input type="radio" name="pliRepMode" value="deny"' + (work.mode === 'deny' ? ' checked' : '') + '> <b>Não</b> reproduzir nos grupos</label>' +
-        '<div class="row" style="margin-top:6px"><select id="prSel"><option value="">— grupo —</option>' + grpOpts + '</select>' +
-        '<button id="prAdd">adicionar</button></div>' +
-        '<div style="margin:8px 0">' + chips + '</div>' +
-        '<div class="row"><button id="prSave">Salvar</button><button class="ghost" id="prClear">limpar</button></div>' +
-        '<p class="muted" style="font-size:11px;margin-top:8px">' +
-        (work.mode === 'allow'
-          ? 'Só os grupos marcados exibem este item; os demais pulam (mas tocam o resto da playlist).'
-          : 'Todos exibem este item, menos os grupos marcados.') + '</p>';
-      b.querySelectorAll('input[name="pliRepMode"]').forEach(function (r) {
-        r.onchange = function () { work.mode = this.value; paint(); };
+    b.innerHTML = '<p class="muted" style="font-size:11px">carregando dispositivos…</p>';
+    var go = function () { paintRep(b, it); };
+    ensureDevices().then(go).catch(go);
+  }
+  function paintRep(b, it) {
+    var work = parseRepRule(it.group_rule);
+    var pickMode = 'grupo';
+    function devicesOfGroup(gid) {
+      return (state.devices || []).filter(function (d) { return d.group_id === gid; }).map(function (d) { return d.id; });
+    }
+    function place(sideName, ids) {
+      var other = sideName === 'allow' ? 'deny' : 'allow';
+      ids.forEach(function (id) {
+        work[other].devices = work[other].devices.filter(function (x) { return x !== id; });
+        if (work[sideName].devices.indexOf(id) < 0) work[sideName].devices.push(id);
       });
-      b.querySelector('#prAdd').onclick = function () {
-        var v = Number(b.querySelector('#prSel').value);
-        if (v && work.groups.indexOf(v) < 0) work.groups.push(v);
+    }
+    function anySide(s) { return s.groups.length || s.devices.length; }
+    function hasAny() { return anySide(work.allow) || anySide(work.deny); }
+    function colBody(sideName) {
+      var s = work[sideName];
+      var out = s.groups.map(function (id) {
+        return '<span class="chip chip-grp" data-k="g" data-s="' + sideName + '" data-id="' + id + '">👥 ' + repGrpLabel(id) + ' <button>✕</button></span>';
+      }).concat(s.devices.map(function (id) {
+        return '<span class="chip" data-k="d" data-s="' + sideName + '" data-id="' + id + '">' + repDevLabel(id) + ' <button>✕</button></span>';
+      }));
+      return out.join('') || '<span class="muted" style="font-size:10px">vazio</span>';
+    }
+    function explain() {
+      if (anySide(work.allow)) return 'Só o lado <b>Sim</b> reproduz este item. Os demais pulam este item, mas tocam o resto da playlist.';
+      if (anySide(work.deny)) return 'Todos reproduzem este item, menos o lado <b>Não</b>.';
+      return 'Sem filtro — este item reproduz em todos os grupos/players vinculados à playlist.';
+    }
+    function paint() {
+      var opts;
+      if (pickMode === 'grupo') {
+        opts = (state.groups || []).map(function (g) {
+          return '<option value="' + g.id + '">' + esc(g.name) + ' (' + devicesOfGroup(g.id).length + ')</option>';
+        }).join('');
+      } else {
+        opts = (state.devices || []).map(function (d) {
+          var g = d.group_id && (state.groups || []).find(function (x) { return x.id === d.group_id; });
+          return '<option value="' + d.id + '">' + esc(d.name || d.serial || ('#' + d.id)) + (g ? ' (' + esc(g.name) + ')' : '') + '</option>';
+        }).join('');
+      }
+      b.innerHTML =
+        '<p class="muted" style="font-size:11px">Filtro por grupo (lote) ou player (1 a 1). Nada escolhido = toca em todos.</p>' +
+        '<div class="radiorow"><input type="radio" name="prPick" value="grupo"' + (pickMode === 'grupo' ? ' checked' : '') + '> Por grupo' +
+        '<input type="radio" name="prPick" value="player"' + (pickMode === 'player' ? ' checked' : '') + ' style="margin-left:12px"> Por player</div>' +
+        '<div class="row" style="margin-top:6px"><select id="prPickSel"><option value="">— escolher —</option>' + opts + '</select></div>' +
+        '<div class="row" style="margin-top:4px"><button id="prToSim">→ Sim</button><button id="prToNao" class="ghost">→ Não</button></div>' +
+        '<div class="prcols">' +
+          '<div class="prcol prcol-sim"><div class="prcol-h">✓ Sim — só estes reproduzem</div><div class="prcol-b">' + colBody('allow') + '</div></div>' +
+          '<div class="prcol prcol-nao"><div class="prcol-h">✕ Não — estes pulam o item</div><div class="prcol-b">' + colBody('deny') + '</div></div>' +
+        '</div>' +
+        '<div class="row"><button id="prSave">Salvar</button><button class="ghost" id="prClear">limpar tudo</button></div>' +
+        '<p class="muted" style="font-size:11px;margin-top:6px">' + explain() + '</p>';
+      b.querySelectorAll('input[name="prPick"]').forEach(function (r) {
+        r.onchange = function () { pickMode = this.value; paint(); };
+      });
+      function addSide(sideName) {
+        var v = b.querySelector('#prPickSel').value;
+        if (!v) return;
+        var ids = pickMode === 'grupo' ? devicesOfGroup(Number(v)) : [Number(v)];
+        if (!ids.length) { log('esse grupo não tem players'); return; }
+        place(sideName, ids);
         paint();
-      };
-      b.querySelectorAll('.chip button').forEach(function (x) {
-        x.onclick = function () { var id = Number(this.dataset.id); work.groups = work.groups.filter(function (g) { return g !== id; }); paint(); };
+      }
+      b.querySelector('#prToSim').onclick = function () { addSide('allow'); };
+      b.querySelector('#prToNao').onclick = function () { addSide('deny'); };
+      b.querySelectorAll('.prcol-b .chip button').forEach(function (x) {
+        x.onclick = function () {
+          var c = this.parentNode, sideName = c.dataset.s, id = Number(c.dataset.id);
+          if (c.dataset.k === 'g') work[sideName].groups = work[sideName].groups.filter(function (g) { return g !== id; });
+          else work[sideName].devices = work[sideName].devices.filter(function (d) { return d !== id; });
+          paint();
+        };
       });
       b.querySelector('#prSave').onclick = function () {
-        pliPatch(it, { group_rule: work.groups.length ? { mode: work.mode, groups: work.groups } : null }, 'regra de reprodução salva');
+        pliPatch(it, { group_rule: hasAny() ? { allow: work.allow, deny: work.deny } : null }, 'reprodução salva');
       };
-      b.querySelector('#prClear').onclick = function () { pliPatch(it, { group_rule: null }, 'regra de reprodução limpa'); };
+      b.querySelector('#prClear').onclick = function () { pliPatch(it, { group_rule: null }, 'reprodução limpa'); };
     }
     paint();
   }
@@ -2189,8 +2272,16 @@
     return tr;
   }
 
+  function ensureDevices(force) {
+    if (state._devLoaded && !force) return Promise.resolve(state.devices);
+    return api('/api/devices').then(function (d) {
+      state.devices = d.devices || []; state._devLoaded = true; return state.devices;
+    });
+  }
+
   function loadDevices() {
     return api('/api/devices').then(function (d) {
+      state.devices = d.devices || []; state._devLoaded = true;
       var tb = $('devTbl').querySelector('tbody'); tb.innerHTML = '';
       var byGroup = {}, ungrouped = [];
       d.devices.forEach(function (dev) {

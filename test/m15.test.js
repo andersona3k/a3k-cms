@@ -57,17 +57,43 @@ test.after(() => {
   fs.rmSync(TMP, { recursive: true, force: true });
 });
 
-test('validateGroupRule + groupRuleAllows', () => {
+test('validateGroupRule: normaliza e aceita formato antigo + novo', () => {
   assert.deepEqual(validateGroupRule(null).value, null);
-  assert.deepEqual(validateGroupRule({ mode: 'allow', groups: [] }).value, null);
+  assert.deepEqual(validateGroupRule({ allow: { groups: [], devices: [] }, deny: {} }).value, null);
   assert.equal(validateGroupRule({ mode: 'x', groups: [1] }).ok, false);
-  assert.deepEqual(validateGroupRule({ mode: 'allow', groups: [3, 1, 1] }).value, { mode: 'allow', groups: [1, 3] });
 
-  assert.equal(groupRuleAllows(null, 5), true);
+  // formato antigo { mode, groups } -> vira { allow, deny }
+  assert.deepEqual(validateGroupRule({ mode: 'allow', groups: [3, 1, 1] }).value,
+    { allow: { groups: [1, 3], devices: [] }, deny: { groups: [], devices: [] } });
+  assert.deepEqual(validateGroupRule({ mode: 'deny', groups: [2] }).value,
+    { allow: { groups: [], devices: [] }, deny: { groups: [2], devices: [] } });
+
+  // novo formato: dedup, ordena, o NÃO vence em caso de overlap
+  assert.deepEqual(
+    validateGroupRule({ allow: { groups: [5, 2], devices: [9, 9] }, deny: { groups: [2], devices: [] } }).value,
+    { allow: { groups: [5], devices: [9] }, deny: { groups: [2], devices: [] } });
+});
+
+test('groupRuleAllows: Sim (allow) / Nao (deny), grupo e player', () => {
+  assert.equal(groupRuleAllows(null, { groupId: 5, deviceId: 1 }), true);
+
+  const allowG = { allow: { groups: [2], devices: [] }, deny: { groups: [], devices: [] } };
+  assert.equal(groupRuleAllows(allowG, { groupId: 2, deviceId: 10 }), true);
+  assert.equal(groupRuleAllows(allowG, { groupId: 3, deviceId: 10 }), false);
+  assert.equal(groupRuleAllows(allowG, { groupId: null, deviceId: 10 }), false);
+
+  const denyD = { allow: { groups: [], devices: [] }, deny: { groups: [], devices: [7] } };
+  assert.equal(groupRuleAllows(denyD, { groupId: 2, deviceId: 7 }), false);
+  assert.equal(groupRuleAllows(denyD, { groupId: 2, deviceId: 8 }), true);
+
+  // allow por player + deny por player no mesmo rule
+  const mixed = { allow: { groups: [], devices: [1, 2] }, deny: { groups: [], devices: [3] } };
+  assert.equal(groupRuleAllows(mixed, { deviceId: 1 }), true);
+  assert.equal(groupRuleAllows(mixed, { deviceId: 3 }), false);
+  assert.equal(groupRuleAllows(mixed, { deviceId: 9 }), false); // allow ativo e player fora
+
+  // retrocompat: segundo arg numero = groupId
   assert.equal(groupRuleAllows({ mode: 'allow', groups: [2] }, 2), true);
-  assert.equal(groupRuleAllows({ mode: 'allow', groups: [2] }, 3), false);
-  assert.equal(groupRuleAllows({ mode: 'allow', groups: [2] }, null), false);
-  assert.equal(groupRuleAllows({ mode: 'deny', groups: [2] }, 2), false);
   assert.equal(groupRuleAllows({ mode: 'deny', groups: [2] }, 3), true);
 });
 
@@ -137,4 +163,35 @@ test('group_rule filtra o manifest do device pelo grupo', async () => {
   // preview do admin (sem grupo) mostra os 3
   const prev = await req('GET', `/api/playlists/${pl2}/manifest`);
   assert.equal(prev.body.items.length, 3);
+});
+
+test('group_rule por PLAYER individual filtra o manifest do device', async () => {
+  const pl3 = (await req('POST', '/api/playlists', { json: { name: 'PL3' } })).body.playlist.id;
+  const j1 = (await req('POST', `/api/playlists/${pl3}/items`, { json: { asset_id: imgId, duration: 3 } })).body.item.id;
+  const j2 = (await req('POST', `/api/playlists/${pl3}/items`, { json: { asset_id: imgId, duration: 3 } })).body.item.id;
+
+  const dX = await req('POST', '/api/pair/new', { json: { hardware_id: 'hw-X' } });
+  const dY = await req('POST', '/api/pair/new', { json: { hardware_id: 'hw-Y' } });
+  const idX = dX.body.deviceId;
+  const idY = dY.body.deviceId;
+
+  // j1: só o player X (lado "Sim");  j2: player Y no lado "Não"
+  await req('PATCH', `/api/playlists/${pl3}/items/${j1}`, { json: { group_rule: { allow: { devices: [idX] } } } });
+  await req('PATCH', `/api/playlists/${pl3}/items/${j2}`, { json: { group_rule: { deny: { devices: [idY] } } } });
+
+  const gX = (await req('POST', '/api/device-groups', { json: { name: 'GX' } })).body.group.id;
+  await req('POST', `/api/device-groups/${gX}/assign`, { json: { playlist_id: pl3 } });
+  await req('PATCH', `/api/devices/${idX}`, { json: { group_id: gX } });
+  await req('PATCH', `/api/devices/${idY}`, { json: { group_id: gX } });
+
+  const mX = await req('GET', `/api/devices/${idX}/manifest?v=-1&p=-1`, { deviceToken: dX.body.token });
+  assert.deepEqual(mX.body.items.map((x) => x.id), [j1, j2]); // X está no allow de j1 e não no deny de j2
+
+  const mY = await req('GET', `/api/devices/${idY}/manifest?v=-1&p=-1`, { deviceToken: dY.body.token });
+  assert.deepEqual(mY.body.items.map((x) => x.id), []); // fora do allow de j1, dentro do deny de j2
+
+  // round-trip: itemsOf devolve a regra no novo shape
+  const full = await req('GET', `/api/playlists/${pl3}`);
+  assert.deepEqual(full.body.items.find((x) => x.id === j1).group_rule,
+    { allow: { groups: [], devices: [idX] }, deny: { groups: [], devices: [] } });
 });
