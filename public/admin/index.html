@@ -194,31 +194,31 @@
   .pli .pliact .pliDur { width:52px; font-size:11px; padding:2px 4px; }
 
   #plAddBox { width:96vw; max-width:96vw; height:94vh; max-height:94vh; display:flex; flex-direction:column; gap:10px; overflow:hidden; }
-  #plAddBody { flex:1; display:grid; grid-template-columns:230px minmax(0,1fr) 320px; gap:12px; min-height:0; }
+  #plAddBody { flex:1; display:grid; grid-template-columns:210px 1fr 200px 1fr; gap:12px; min-height:0; }
   #plAddBody > div { border:1px solid var(--line); border-radius:9px; padding:8px; background:#0b1219; overflow:auto; }
+  #plAddMid { display:flex; flex-direction:column; gap:14px; overflow:visible; }
   .pladd-col-h { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
   .pladd-col-h button { padding:3px 9px; font-size:11px; }
   #plAddCrumb a { color:var(--acc); text-decoration:none; }
-  .pladd-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; align-content:start; }
-  .pladd-grid-2 { grid-template-columns:repeat(2,1fr); }
+  .pladd-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(86px,1fr)); gap:8px; align-content:start; }
   .pladd-tile { border:1px solid var(--line); border-radius:7px; overflow:hidden; background:#0d141c; cursor:pointer; position:relative; }
-  .pladd-tile .t { height:56px; display:flex; align-items:center; justify-content:center; background:#000; font-size:20px; position:relative; }
+  .pladd-tile .t { aspect-ratio:1; display:flex; align-items:center; justify-content:center; background:#000; font-size:22px; position:relative; }
   .pladd-tile .t img { width:100%; height:100%; object-fit:cover; }
   .pladd-tile .n { padding:3px 5px 4px; font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .pladd-tile.sel { outline:2px solid var(--acc); outline-offset:-2px; }
   .pladd-tile.dup { background:#3a3410; border-color:#e0a12f; }
   .pladd-tile.dup .t::after { content:'⚠'; position:absolute; inset:0; display:flex; align-items:center;
-    justify-content:center; font-size:24px; background:#0009; }
-  #plAddPlBar { border:1px solid var(--line); border-radius:9px; padding:8px; background:#0b1219; }
-  #plAddPlRow { display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; }
-  #plAddPlRow .pli-mini { flex:0 0 auto; width:96px; border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#0d141c; position:relative; }
-  #plAddPlRow .pli-mini .t { height:48px; display:flex; align-items:center; justify-content:center; background:#000; font-size:18px; }
-  #plAddPlRow .pli-mini .t img { width:100%; height:100%; object-fit:cover; }
-  #plAddPlRow .pli-mini .n { padding:2px 4px; font-size:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  #plAddPlRow .pli-mini .num { position:absolute; top:2px; left:2px; background:var(--acc); color:#fff; font-size:9px;
-    font-weight:700; padding:0 4px; border-radius:4px; }
+    justify-content:center; font-size:26px; background:#0009; }
+  #plAddSend { background:#2e9c5f; border-color:#2e9c5f; color:#fff; font-weight:700; font-size:14px; padding:16px 8px; width:100%; }
+  #plAddSend:hover { background:#37b06d; }
+  #plAddConfirm { font-weight:700; font-size:15px; padding:22px 8px; width:100%; line-height:1.35; }
+  #plAddConfirm:disabled { opacity:.45; }
+  #plAddPlInfo { border:1px solid var(--line); border-radius:8px; padding:10px; background:#0d141c; font-size:12px; }
+  #plAddPlInfo .pih { color:var(--mut); font-size:11px; margin-bottom:6px; }
+  #plAddPlInfo .pir { display:flex; justify-content:space-between; gap:8px; padding:3px 0; }
+  #plAddPlInfo .pir span { color:var(--mut); }
   #plAddTree .fnode { padding:4px 6px; }
-  @media (max-width:900px) { #plAddBody { grid-template-columns:1fr; } }
+  @media (max-width:1000px) { #plAddBody { grid-template-columns:1fr; } #plAddMid { flex-direction:row; flex-wrap:wrap; align-items:center; } #plAddSend, #plAddConfirm { width:auto; } }
   .assetgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:12px; }
   .atile { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#0d141c; cursor:grab; }
   .atile:hover { border-color:var(--acc); }
@@ -510,26 +510,26 @@
         <ul class="ftree" id="plAddTree"></ul>
       </div>
       <div id="plAddRepoCol">
-        <div class="pladd-col-h" style="display:flex;justify-content:space-between;align-items:center">
-          <span id="plAddCrumb"></span>
-          <button id="plAddSend">enviar para a seleção →</button>
-        </div>
+        <div class="pladd-col-h"><span id="plAddCrumb"></span></div>
         <div id="plAddGrid" class="pladd-grid"></div>
+      </div>
+      <div id="plAddMid">
+        <button id="plAddSend">enviar para a<br>seleção →</button>
+        <div id="plAddPlInfo">
+          <div class="pih">Playlist — <b id="plAddPlName">—</b></div>
+          <div class="pir"><span>Tamanho</span><b id="plAddInfoSize">—</b></div>
+          <div class="pir"><span>Arquivos</span><b id="plAddInfoN">—</b></div>
+          <div class="pir"><span>Vigência</span><b id="plAddInfoVig">—</b></div>
+        </div>
+        <button id="plAddConfirm">Adicionar<br>à playlist</button>
       </div>
       <div id="plAddSelCol">
         <div class="pladd-col-h" style="display:flex;justify-content:space-between;align-items:center">
           <span>Seleção (<span id="plAddSelN">0</span>)</span>
-          <span>
-            <button class="ghost" id="plAddSendBack">← remover</button>
-            <button id="plAddConfirm">Adicionar à playlist</button>
-          </span>
+          <button class="ghost" id="plAddSendBack">← remover</button>
         </div>
-        <div id="plAddSelGrid" class="pladd-grid pladd-grid-2"></div>
+        <div id="plAddSelGrid" class="pladd-grid"></div>
       </div>
-    </div>
-    <div id="plAddPlBar">
-      <div class="pladd-col-h">Playlist atual — <span id="plAddPlName">—</span></div>
-      <div id="plAddPlRow"></div>
     </div>
   </div>
 </div>
@@ -1522,10 +1522,29 @@
     var p = (state.playlists || []).find(function (x) { return x.id === state.activePlaylist; });
     $('plAddPlName').textContent = (p && p.name) || ('#' + state.activePlaylist);
     Promise.all([loadAssets(), plAddRefreshPl()]).then(function () {
-      renderPlAddTree(); renderPlAddCrumb(); renderPlAddGrid(); renderPlAddSel(); renderPlAddPlRow();
+      renderPlAddTree(); renderPlAddCrumb(); renderPlAddGrid(); renderPlAddSel(); renderPlAddPlInfo();
     });
   }
-  $('plAddClose').onclick = function () { $('plAddModal').classList.add('hidden'); };
+  $('plAddClose').onclick = function () {
+    $('plAddModal').classList.add('hidden');
+    loadPlaylistItems(); loadPlaylists();
+  };
+  function fmtDateBr(ymd) {
+    if (!ymd) return '';
+    var m = String(ymd).slice(0, 10).split('-');
+    return m.length === 3 ? m[2] + '/' + m[1] + '/' + m[0] : String(ymd);
+  }
+  function renderPlAddPlInfo() {
+    var p = (state.playlists || []).find(function (x) { return x.id === state.activePlaylist; }) || {};
+    $('plAddPlName').textContent = p.name || ('#' + state.activePlaylist);
+    var seen = {}, bytes = 0;
+    _plAddPlItems.forEach(function (it) { if (it.hash && !seen[it.hash]) { seen[it.hash] = 1; bytes += (it.size_bytes || 0); } });
+    $('plAddInfoSize').textContent = fmtMB(bytes);
+    $('plAddInfoN').textContent = _plAddPlItems.length;
+    $('plAddInfoVig').textContent = (p.valid_from || p.valid_until)
+      ? (fmtDateBr(p.valid_from) || '…') + ' → ' + (fmtDateBr(p.valid_until) || '…')
+      : 'sem vigência';
+  }
 
   function plAddMiniThumb(a) {
     return a.type === 'image'
@@ -1613,18 +1632,8 @@
     });
     $('plAddSendBack').disabled = _plAddSelPick == null;
     $('plAddConfirm').disabled = !_plAddSel.length;
-    $('plAddConfirm').textContent = 'Adicionar à playlist' + (dups ? ' (⚠ ' + dups + ' repetido)' : '');
-  }
-  function renderPlAddPlRow() {
-    var row = $('plAddPlRow'); row.innerHTML = '';
-    if (!_plAddPlItems.length) { row.innerHTML = '<span class="muted" style="font-size:12px">playlist vazia</span>'; return; }
-    _plAddPlItems.forEach(function (it, i) {
-      var d = document.createElement('div'); d.className = 'pli-mini';
-      d.innerHTML = '<span class="num">' + (i + 1) + '</span>' +
-        '<div class="t" data-g="' + assetGlyph(it.type) + '">' + plAddMiniThumb(it) + '</div>' +
-        '<div class="n" title="' + esc(it.filename) + '">' + esc(it.filename) + '</div>';
-      row.appendChild(d);
-    });
+    $('plAddConfirm').innerHTML = 'Adicionar<br>à playlist' +
+      (dups ? '<br><span style="font-weight:400;font-size:11px">⚠ ' + dups + ' repetido</span>' : '');
   }
   $('plAddSend').onclick = function () {
     _plAddMarked.forEach(function (id) { if (_plAddSel.indexOf(id) < 0) _plAddSel.push(id); });
@@ -1647,7 +1656,7 @@
           (wasDup ? ' — ' + wasDup + ' ja existia(m), duplicado(s) permitido(s)' : ''));
         _plAddSel = []; _plAddSelPick = null;
         Promise.all([plAddRefreshPl(), loadPlaylistItems(), loadPlaylists()]).then(function () {
-          renderPlAddTree(); renderPlAddGrid(); renderPlAddSel(); renderPlAddPlRow();
+          renderPlAddTree(); renderPlAddGrid(); renderPlAddSel(); renderPlAddPlInfo();
         });
         return;
       }
