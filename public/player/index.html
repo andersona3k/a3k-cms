@@ -4,6 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>A3K Player</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icon.svg" />
+<meta name="theme-color" content="#000000" />
+<meta name="mobile-web-app-capable" content="yes" />
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   /* orientacao (giro + espelho) aplicada por JS inline em #stage e #status */
@@ -123,22 +127,34 @@
   var activation = null;
   var actPollTimer = null, expiryTimer = null;
 
-  // ---------------------------------------------------------------- F11 tela cheia
-  function toggleFullscreen() {
+  // ---------------------------------------------------------------- tela cheia
+  // O navegador SÓ entra em tela cheia a partir de um gesto do usuário. Então:
+  //  - F11: alterna (entra/sai).
+  //  - qualquer 1º clique/toque/tecla: entra (uma vez basta; se o usuário sair
+  //    com Esc, o próximo clique reentra). Sem gesto nenhum -> não dá; use
+  //    `msedge.exe --kiosk <url>` ou instale como app (manifest display:fullscreen).
+  function enterFullscreen() {
     try {
-      if (!document.fullscreenElement) {
-        var el = document.documentElement;
-        var rq = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
-        if (rq) { var p = rq.call(el); if (p && p.catch) p.catch(function () {}); }
-      } else {
-        var ex = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
-        if (ex) ex.call(document);
-      }
+      if (document.fullscreenElement) return;
+      var el = document.documentElement;
+      var rq = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+      if (rq) { var p = rq.call(el); if (p && p.catch) p.catch(function () {}); }
     } catch (e) {}
   }
+  function exitFullscreen() {
+    try {
+      var ex = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+      if (document.fullscreenElement && ex) ex.call(document);
+    } catch (e) {}
+  }
+  function toggleFullscreen() {
+    if (document.fullscreenElement) exitFullscreen(); else enterFullscreen();
+  }
   window.addEventListener('keydown', function (e) {
-    if (e.key === 'F11' || e.keyCode === 122) { e.preventDefault(); toggleFullscreen(); }
+    if (e.key === 'F11' || e.keyCode === 122) { e.preventDefault(); toggleFullscreen(); return; }
+    enterFullscreen();   // qualquer outra tecla também entra
   });
+  window.addEventListener('pointerdown', enterFullscreen);   // qualquer clique/toque entra
 
   // ---------------------------------------------------------------- IndexedDB (offline)
   // Guarda cada asset como Blob (chave = hash sha256, ou a url se nao houver hash)
@@ -309,7 +325,7 @@
     tickExpiry();
   }
   function tickExpiry() {
-    var hint = 'F11 = tela cheia';
+    var hint = 'Clique p/ tela cheia · F11 alterna';
     if (activation && activation.expiresAt) {
       var end = new Date(String(activation.expiresAt).replace(' ', 'T') + 'Z').getTime();
       var left = Math.max(0, Math.round((end - Date.now()) / 1000));
@@ -325,7 +341,7 @@
     showStatus(true);
     statusTitle.textContent = 'A3K Digital Signage';
     serialEl.textContent = '…';
-    setStatus('Ativando…', 'F11 = tela cheia');
+    setStatus('Ativando…', 'Clique p/ tela cheia · F11 alterna');
     return fetch(API + '/api/activation/new', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -451,7 +467,7 @@
   function idle(msg) {
     showStatus(true);
     statusTitle.textContent = 'A3K Digital Signage';
-    setStatus(msg, 'Serial: ' + (device.serial || '—') + '  ·  F11 = tela cheia');
+    setStatus(msg, 'Serial: ' + (device.serial || '—') + '  ·  Clique p/ tela cheia · F11 alterna');
     clearTimeout(advanceTimer);
     cover.classList.remove('on');
     clearStage();
@@ -592,7 +608,7 @@
       .then(function () {
         showStatus(true);
         statusTitle.textContent = 'A3K Digital Signage';
-        setStatus('Carregando…', 'F11 = tela cheia');
+        setStatus('Carregando…', 'Clique p/ tela cheia · F11 alterna');
         return metaGet('manifest').then(function (m) {
           if (m && !allItems.length) applyManifest(m);   // pinta do cache primeiro
         }).catch(function () {});

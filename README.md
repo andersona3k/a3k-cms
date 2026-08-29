@@ -177,8 +177,11 @@ Trilho separado, em `players/`. So os nativos entregam offline real.
   servida** — offline real vale para "a rede caiu com o player já rodando"; boot
   a frio sem servidor precisa de Service Worker (exige HTTPS) ou do APK nativo.
   Sem HTTPS não há `storage.persist()` (cache é best-effort).
-- **F11** alterna tela cheia (`requestFullscreen`/`exitFullscreen`), na tela do
-  código e durante a reprodução.
+- **Tela cheia**: o navegador só entra a partir de um gesto. F11 alterna; qualquer
+  1º clique/toque/tecla entra (`pointerdown`/`keydown` -> `requestFullscreen`).
+  Zero-toque de verdade: `msedge.exe --kiosk <url>` (atalho no PC) ou instalar como
+  app — `manifest.webmanifest` tem `display:fullscreen` (precisa HTTPS p/ o prompt
+  de instalar).
 - Browser recomendado: **Edge/Chrome** (Chromium) — H.264/AAC, autoplay por flag,
   `--kiosk`/`--app`.
 
