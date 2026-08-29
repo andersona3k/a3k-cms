@@ -41,14 +41,16 @@ object Prefs {
     fun manualRotation(c: Context): Int = sp(c).getInt(K_MANUAL_ROT, -1)
 
     fun setManualRotation(c: Context, steps: Int) {
-        sp(c).edit().putInt(K_MANUAL_ROT, ((steps % 4) + 4) % 4).apply()
+        sp(c).edit().putInt(K_MANUAL_ROT, ((steps % 4) + 4) % 4).commit()
     }
 
     /** F1: player parado pelo operador. BootReceiver/Watchdog nao devem relancar. */
     fun isStopped(c: Context): Boolean = sp(c).getBoolean(K_STOPPED, false)
 
     fun setStopped(c: Context, stopped: Boolean) {
-        sp(c).edit().putBoolean(K_STOPPED, stopped).apply()
+        // commit() (sincrono): logo apos o F1 a Activity encerra e o processo
+        // pode morrer antes de um apply() assincrono chegar ao disco.
+        sp(c).edit().putBoolean(K_STOPPED, stopped).commit()
     }
 
     fun requestedOrientation(c: Context): Int {

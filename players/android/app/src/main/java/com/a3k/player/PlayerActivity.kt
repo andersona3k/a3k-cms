@@ -6,7 +6,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.Process
 import android.os.SystemClock
 import android.text.InputType
 import android.util.Log
@@ -35,7 +34,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.widget.doAfterTextChanged
 import com.a3k.player.cms.CmsCache
 import com.a3k.player.cms.Prefs
-import kotlin.system.exitProcess
 
 class PlayerActivity : AppCompatActivity() {
 
@@ -322,15 +320,13 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun stopPlayer() {
-        Prefs.setStopped(this, true)
+        Prefs.setStopped(this, true)   // commit() sincrono
         Watchdog.disarm(this)
         dismissStopPrompt()
+        // finishAndRemoveTask sozinho: fecha a Activity e tira da lista de
+        // recentes (a tela volta pro launcher). NADA de killProcess aqui — matar
+        // o processo logo apos escrever prefs corrompe o arquivo.
         finishAndRemoveTask()
-        // encerra o processo pra nao sobrar nada segurando a tela
-        ui.postDelayed({
-            Process.killProcess(Process.myPid())
-            exitProcess(0)
-        }, 200)
     }
 
     companion object {
