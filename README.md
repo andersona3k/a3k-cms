@@ -252,6 +252,8 @@ Superadmin manda `X-Company-Id` p/ atuar em outra empresa.
 | POST | `/api/pair/requests` | _legado_ — `{name?,group_id?,player_type?}` -> `{request:{code},provisioning}` |
 | GET  | `/api/pair/requests[/:id]` | _legado_ — lista / poll |
 | DELETE | `/api/pair/requests/:id` | _legado_ — cancela o codigo |
+| GET  | `/api/downloads/apk/info` | **público** — `{exists,size,updated_at,url}` do APK do player Android |
+| POST | `/api/downloads/apk` | JWT `pairing:manage` — sobe/substitui `<media>/downloads/a3k-player.apk` (servido em `/downloads/a3k-player.apk`) |
 | GET · POST · PATCH | `/api/companies[/:id]` | **superadmin** — gestao de empresas |
 | GET · POST · PATCH · DELETE | `/api/roles[/:id]` | perm `roles:manage` — `{name,permissions}` |
 | GET · POST · PATCH | `/api/users[/:id]` · POST `/:id/password` | perm `users:manage` |
@@ -306,6 +308,7 @@ src/
     library.js         aplica probe no asset, apaga arquivo orfao
   routes/
     assets.js · folders.js · playlists.js · devices.js · deviceGroups.js
+    downloads.js        APK do player Android (info público, upload JWT) -> /downloads/
     activation.js       ativação iniciada pelo player (new/status públicos, redeem JWT)
     pairing.js          _legado_ — Add player (admin gera o codigo)
     companies.js        gestao de empresas (superadmin)
@@ -315,14 +318,18 @@ public/
   player/index.html    player web — ativação por código gerado no player + cache
                        offline em IndexedDB (Blob por hash) + F11 tela cheia
   admin/index.html     painel em ABAS (Biblioteca · Playlists · Dispositivos ·
-                       Configuracao · Administracao) no <header> fixo/sticky (ao
-                       lado do seletor de empresa; #brandLogo mostra a logo da
-                       empresa se houver, senao "A3K CMS"; aba ativa = fundo claro
-                       + fonte escura) + barra de Log retratil no rodape. Aba
-                       lembrada em localStorage e no hash da URL.
+                       Configuracao · Administracao · Suporte) no <header>
+                       fixo/sticky (ao lado do seletor de empresa; #brandLogo
+                       mostra a logo da empresa se houver, senao "A3K CMS"; aba
+                       ativa = fundo claro + fonte escura) + barra de Log retratil
+                       no rodape. Aba lembrada em localStorage e no hash da URL.
                        Administracao = SO superadmin (empresas + papeis + usuarios
-                       + logo por empresa + modulos). Configuracao = administrador
-                       (mostra os modulos liberados; resto em construcao).
+                       + logo por empresa + modulos). Suporte = visivel p/ todos
+                       (stub). Configuracao = administrador: modulos liberados +
+                       bloco "Digital - Players" (grupo padrao "Player", link de
+                       ativacao + Copiar, e 4 tipos em <details>: Browser
+                       Windows/Edge [pronto], Android APK [baixar/enviar +
+                       passo-a-passo ADB], Tizen e webOS [em breve]).
                        Aba Dispositivos = tela cheia, visao unificada grupo+players:
                        cada grupo e uma linha-mae (playlist atual + "Salvar",
                        renomear, apagar) e os players entram nas linhas abaixo.
@@ -396,7 +403,7 @@ node_modules/sortablejs servido em /vendor/sortablejs/ (drag-drop, sem CDN)
 scripts/
   seed.js · reset.js
 test/
-  m0..m16.test.js  testes de aceite (150 no total)
+  m0..m17.test.js  testes de aceite (153 no total)
 ```
 
 `sharp` traz binarios prebuilt; `@ffprobe-installer/ffprobe` baixa o `ffprobe`

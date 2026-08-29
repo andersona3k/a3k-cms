@@ -16,6 +16,7 @@ const devicesRoutes = require('./routes/devices');
 const deviceGroupsRoutes = require('./routes/deviceGroups');
 const pairingRoutes = require('./routes/pairing');
 const activationRoutes = require('./routes/activation');
+const downloadsRoutes = require('./routes/downloads');
 const companiesRoutes = require('./routes/companies');
 const rolesRoutes = require('./routes/roles');
 const usersRoutes = require('./routes/users');
@@ -63,6 +64,7 @@ function createApp() {
   app.use('/api/companies', companiesRoutes);
   app.use('/api/roles', rolesRoutes);
   app.use('/api/users', usersRoutes);
+  app.use('/api/downloads', downloadsRoutes);
 
   // Download de midia.
   app.use(
@@ -72,6 +74,9 @@ function createApp() {
       setHeaders: (res) => res.set('Cache-Control', 'public, max-age=31536000, immutable'),
     })
   );
+
+  // Arquivos para download (APK do player Android, etc.) — <media>/downloads/.
+  app.use('/downloads', express.static(path.join(config.mediaDir, 'downloads'), { index: false }));
 
   // Player web (kiosk) e mini painel admin — HTML estatico; a autenticacao real
   // acontece nas chamadas /api que cada pagina faz.

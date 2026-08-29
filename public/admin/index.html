@@ -20,6 +20,13 @@
   .modrow .modbadge { padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
   .modrow .modbadge.on { background:#173a29; color:#5fd08a; }
   .modrow .modbadge.off { background:#2a3947; color:var(--mut); }
+  .plkind { border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin:6px 0; background:#0d141c; }
+  .plkind > summary { cursor:pointer; font-weight:600; font-size:13px; list-style:none; }
+  .plkind > summary::-webkit-details-marker { display:none; }
+  .plkind[open] > summary { margin-bottom:6px; }
+  .ptag { font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; background:#2a3947; color:var(--mut); margin-left:6px; }
+  .ptag.ok { background:#173a29; color:#5fd08a; }
+  .ptag.soon { background:#3a3410; color:#e0c05a; }
   #compTbl .logocell img { max-height:26px; max-width:80px; object-fit:contain; vertical-align:middle; border:1px solid var(--line); border-radius:4px; background:#fff2; }
   #compTbl .logocell button { padding:3px 8px; font-size:11px; }
   main { max-width:1040px; margin:0 auto; padding:20px; display:grid; gap:16px; }
@@ -307,6 +314,7 @@
     <button data-target="pane-dispositivos">Dispositivos</button>
     <button data-target="pane-config" id="tabConfigBtn" class="hidden">Configuração</button>
     <button data-target="adminCard" id="tabAdminBtn" class="hidden">Administração</button>
+    <button data-target="pane-suporte">Suporte</button>
   </nav>
   <span style="flex:1"></span>
   <span id="who" class="muted"></span>
@@ -399,11 +407,7 @@
 
     <div id="cfgDigital" class="hidden">
       <h3 style="color:var(--mut);font-size:13px;margin:20px 0 4px">Digital — Players</h3>
-      <p class="muted" style="font-size:12px">
-        Tipo suportado agora: <b>🖥️ Browser — Windows / Edge</b>. Abra o link num Edge
-        ou Chrome: a tela do player mostra um <b>código</b>. No painel, em
-        <b>Playlists → sua playlist → 📺 ativar player</b>, cole o código. <b>F11</b> = tela cheia.
-      </p>
+
       <label>Grupo padrão dos players ativados</label>
       <div class="row">
         <select id="cfgPlayerGroup"></select>
@@ -414,11 +418,60 @@
         <input id="cfgPlayerLink" readonly style="flex:1;font-family:ui-monospace,monospace" />
         <button id="cfgCopyLink">Copiar</button>
       </div>
-      <p class="muted" id="cfgLinkNote" style="font-size:12px;margin-top:4px"></p>
+      <p class="muted" id="cfgLinkNote" style="font-size:12px;margin:4px 0 12px"></p>
+
+      <div id="plkinds">
+        <details open class="plkind">
+          <summary>🖥️ Browser — Windows / Edge <span class="ptag ok">pronto</span></summary>
+          <p class="muted" style="font-size:12px">
+            Abra o <b>link acima</b> num Edge ou Chrome: aparece um <b>código</b>. Ative pelo painel
+            em <b>Playlists → sua playlist → 📺 ativar player</b>. Clique/<b>F11</b> = tela cheia.
+            Tela dedicada: atalho <code>msedge.exe --kiosk &lt;link&gt;</code> na inicialização.
+          </p>
+        </details>
+
+        <details class="plkind">
+          <summary>🤖 Android — APK <span class="ptag" id="cfgApkTag">—</span></summary>
+          <div id="cfgApkBody" style="margin:6px 0"></div>
+          <div class="row" style="margin:6px 0">
+            <input type="file" id="cfgApkFile" accept=".apk" style="flex:1" />
+            <button id="cfgApkSend" class="ghost">enviar / substituir APK</button>
+          </div>
+          <b style="font-size:12px">Instalação via ADB</b>
+          <ol class="muted" style="font-size:12px;padding-left:18px;margin:4px 0">
+            <li>No aparelho: <b>Ajustes → Sobre → toque 7×</b> em "Número da versão" (ativa o modo desenvolvedor).</li>
+            <li><b>Ajustes → Opções do desenvolvedor</b> → ligue <b>Depuração USB</b>.</li>
+            <li>No PC com <code>adb</code> instalado, conecte o aparelho por USB e <b>autorize</b> no aparelho.</li>
+            <li><code>adb install -r a3k-player.apk</code></li>
+            <li><code>adb shell am start -n com.a3k.player/.PlayerActivity</code> — ou abra o app <b>A3K Player</b>.</li>
+            <li>O app mostra o <b>código</b>; ative pelo painel igual ao browser. Ele já sobe no boot e fica em tela cheia.</li>
+          </ol>
+        </details>
+
+        <details class="plkind">
+          <summary>📺 Samsung — Tizen <span class="ptag soon">em breve</span></summary>
+          <p class="muted" style="font-size:12px">
+            Aguardando a documentação da Samsung. O player web (<code>/player/</code>) já roda no
+            navegador do Tizen; falta o empacotamento <code>.wgt</code> assinado com o certificado de parceiro.
+          </p>
+        </details>
+
+        <details class="plkind">
+          <summary>📺 LG — webOS <span class="ptag soon">em breve</span></summary>
+          <p class="muted" style="font-size:12px">
+            Aguardando definição. O player web roda no navegador do webOS; falta o app <code>.ipk</code>.
+          </p>
+        </details>
+      </div>
     </div>
 
     <h3 style="color:var(--mut);font-size:13px;margin:20px 0 4px">Permissões e ajustes do administrador</h3>
     <p class="muted">🚧 Em construção — aqui o administrador vai poder criar configurações e liberar permissões por função.</p>
+  </div>
+
+  <div class="card tabpane hidden" id="pane-suporte">
+    <h2>Suporte</h2>
+    <p class="muted">🚧 Em construção — canal de suporte, base de conhecimento e abertura de chamados.</p>
   </div>
 
   <div class="card tabpane hidden" id="adminCard">
@@ -664,7 +717,7 @@
   }
 
   // ---- abas ----
-  var TABS = ['pane-biblioteca', 'pane-playlist', 'pane-dispositivos', 'pane-config', 'adminCard'];
+  var TABS = ['pane-biblioteca', 'pane-playlist', 'pane-dispositivos', 'pane-config', 'adminCard', 'pane-suporte'];
   var GATED = { 'pane-config': 1, adminCard: 1 }; // so aparecem se nao estiverem 'hidden'
   var _tabsWired = false;
   var _bootTab = '';
@@ -2626,6 +2679,32 @@
         setTimeout(function () { b.textContent = o; }, 1500);
       }).catch(function () { log('não consegui copiar — selecione e copie manualmente'); });
     };
+
+    renderApkInfo();
+    $('cfgApkSend').onclick = function () {
+      var f = $('cfgApkFile').files[0];
+      if (!f) { log('escolha o arquivo .apk'); return; }
+      var fd = new FormData(); fd.append('file', f);
+      var b = this; b.disabled = true; b.textContent = 'enviando…';
+      api('/api/downloads/apk', { method: 'POST', body: fd }).then(function (d) {
+        log('APK publicado (' + fmtMB(d.size) + ')'); $('cfgApkFile').value = '';
+      }).catch(function (e) { log('APK: ' + (e.body && e.body.error || e.message)); })
+        .then(function () { b.disabled = false; b.textContent = 'enviar / substituir APK'; renderApkInfo(); });
+    };
+  }
+  function renderApkInfo() {
+    api('/api/downloads/apk/info').then(function (d) {
+      var tag = $('cfgApkTag'), body = $('cfgApkBody');
+      if (d && d.exists) {
+        tag.className = 'ptag ok'; tag.textContent = 'disponível';
+        body.innerHTML = '<a href="' + d.url + '" download>⬇ Baixar APK</a> ' +
+          '<span class="muted" style="font-size:11px">(' + fmtMB(d.size) + ' · ' + fmtDateBr(d.updated_at) + ')</span>';
+      } else {
+        tag.className = 'ptag soon'; tag.textContent = 'sem APK';
+        body.innerHTML = '<span class="muted" style="font-size:12px">Nenhum APK publicado ainda. Gere o build (' +
+          '<code>./gradlew :app:assembleRelease</code> em <code>players/android/</code>) e envie abaixo.</span>';
+      }
+    }).catch(function () {});
   }
   $('companyCtx').onchange = function () {
     state.companyCtx = this.value;
