@@ -396,6 +396,27 @@
     <h3 style="color:var(--mut);font-size:13px;margin:4px 0">Módulos habilitados</h3>
     <div id="cfgModules" class="modrow"></div>
     <p class="muted" style="font-size:12px;margin-top:6px">Os módulos são liberados pelo superadmin na aba Administração ao criar/editar a empresa.</p>
+
+    <div id="cfgDigital" class="hidden">
+      <h3 style="color:var(--mut);font-size:13px;margin:20px 0 4px">Digital — Players</h3>
+      <p class="muted" style="font-size:12px">
+        Tipo suportado agora: <b>🖥️ Browser — Windows / Edge</b>. Abra o link num Edge
+        ou Chrome: a tela do player mostra um <b>código</b>. No painel, em
+        <b>Playlists → sua playlist → 📺 ativar player</b>, cole o código. <b>F11</b> = tela cheia.
+      </p>
+      <label>Grupo padrão dos players ativados</label>
+      <div class="row">
+        <select id="cfgPlayerGroup"></select>
+        <button id="cfgMakePlayerGroup" class="ghost">criar grupo "Player"</button>
+      </div>
+      <label>Link de ativação para enviar ao dispositivo</label>
+      <div class="row">
+        <input id="cfgPlayerLink" readonly style="flex:1;font-family:ui-monospace,monospace" />
+        <button id="cfgCopyLink">Copiar</button>
+      </div>
+      <p class="muted" id="cfgLinkNote" style="font-size:12px;margin-top:4px"></p>
+    </div>
+
     <h3 style="color:var(--mut);font-size:13px;margin:20px 0 4px">Permissões e ajustes do administrador</h3>
     <p class="muted">🚧 Em construção — aqui o administrador vai poder criar configurações e liberar permissões por função.</p>
   </div>
@@ -2442,6 +2463,8 @@
     (state.groups || []).forEach(function (g) {
       var o = document.createElement('option'); o.value = g.id; o.textContent = g.name; gsel.appendChild(o);
     });
+    var defG = localStorage.getItem('a3k_player_group') || '';
+    if (defG && gsel.querySelector('option[value="' + defG + '"]')) gsel.value = defG;
     var psel = $('apPlaylist'); psel.innerHTML = '<option value="">(atribuir depois)</option>';
     (state.playlists || []).forEach(function (p) {
       var o = document.createElement('option'); o.value = p.id; o.textContent = p.name; psel.appendChild(o);
@@ -2532,6 +2555,18 @@
       $('brandLogo').innerHTML = '<b>A3K CMS</b> <span class="muted">painel admin</span>';
     }
   }
+  function copyText(t) {
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t);
+    return new Promise(function (res, rej) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta); res();
+      } catch (e) { rej(e); }
+    });
+  }
+
   function renderConfigPane() {
     var box = $('cfgModules'); if (!box) return;
     var mods = (state.me && state.me.company && state.me.company.modules) || [];
@@ -2539,6 +2574,58 @@
       var on = mods.indexOf(m) >= 0;
       return '<span class="modbadge ' + (on ? 'on' : 'off') + '">' + (on ? '✓ ' : '✗ ') + MODULE_LABELS[m] + '</span>';
     }).join('');
+
+    var dig = mods.indexOf('digital') >= 0;
+    $('cfgDigital').classList.toggle('hidden', !dig);
+    if (dig) renderCfgPlayers();
+  }
+
+  function renderCfgPlayers() {
+    if (!(state.groups && state.groups.length) && !state._cfgGroupsTried) {
+      state._cfgGroupsTried = 1;
+      loadGroups().then(renderCfgPlayers).catch(function () {});
+    }
+    var link = location.origin + '/player/';
+    $('cfgPlayerLink').value = link;
+    var host = location.hostname;
+    var note;
+    if (/\.ts\.net$/.test(host) || /^100\./.test(host)) {
+      note = 'Este link abre em dispositivos com o Tailscale ligado (mesma conta). ';
+    } else if (/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host) || host === 'localhost') {
+      note = 'Este link só abre em dispositivos na MESMA rede local. ';
+    } else {
+      note = '';
+    }
+    $('cfgLinkNote').textContent = note +
+      'Para dispositivos fora da rede e sem Tailscale, é preciso a VM externa com domínio público (ou um túnel).';
+
+    var sel = $('cfgPlayerGroup');
+    var saved = localStorage.getItem('a3k_player_group') || '';
+    var groups = state.groups || [];
+    sel.innerHTML = '<option value="">— sem grupo —</option>' + groups.map(function (g) {
+      return '<option value="' + g.id + '"' + (String(g.id) === saved ? ' selected' : '') + '>' + esc(g.name) + '</option>';
+    }).join('');
+    sel.onchange = function () { localStorage.setItem('a3k_player_group', this.value); };
+
+    var mk = $('cfgMakePlayerGroup');
+    mk.disabled = groups.some(function (g) { return g.name.toLowerCase() === 'player'; });
+    mk.textContent = mk.disabled ? 'grupo "Player" já existe' : 'criar grupo "Player"';
+    mk.onclick = function () {
+      jpost('/api/device-groups', { name: 'Player' }).then(function (d) {
+        var id = d.group ? d.group.id : (d.id || '');
+        if (id) localStorage.setItem('a3k_player_group', String(id));
+        log('grupo "Player" criado');
+        loadGroups().then(renderCfgPlayers);
+      }).catch(function (e) { log('grupo Player: ' + (e.body && e.body.error || e.message)); });
+    };
+
+    $('cfgCopyLink').onclick = function () {
+      var b = this;
+      copyText(link).then(function () {
+        var o = b.textContent; b.textContent = 'copiado ✓';
+        setTimeout(function () { b.textContent = o; }, 1500);
+      }).catch(function () { log('não consegui copiar — selecione e copie manualmente'); });
+    };
   }
   $('companyCtx').onchange = function () {
     state.companyCtx = this.value;
