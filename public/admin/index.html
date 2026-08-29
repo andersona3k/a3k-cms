@@ -63,12 +63,12 @@
   tr.sortable-ghost { opacity:.4; }
   tr.sortable-chosen { background:#1b2733; }
   td .durInput { width:80px; }
-  #previewModal { position:fixed; inset:0; background:#000d; display:flex; align-items:center; justify-content:center; z-index:30; }
+  #previewModal { position:fixed; inset:0; background:#000d; display:flex; align-items:center; justify-content:center; z-index:45; }
   #previewStage { width:80vw; height:80vh; background:#000; border:1px solid var(--line); border-radius:10px;
     display:flex; align-items:center; justify-content:center; overflow:hidden; }
   #previewStage img, #previewStage video { width:100%; height:100%; object-fit:contain; }
   #previewBar { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); display:flex; gap:10px; align-items:center;
-    background:var(--card); border:1px solid var(--line); border-radius:999px; padding:8px 16px; font-size:13px; }
+    background:var(--card); border:1px solid var(--line); border-radius:999px; padding:8px 16px; font-size:13px; z-index:46; }
   #addPlayerModal, #schedModal, #devModal { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:30; }
   #schDays label { margin:0; font-size:12px; } #schDays input { width:auto; }
   .modalBox { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; width:420px; max-width:92vw; }
@@ -180,19 +180,23 @@
     border-radius:6px; padding:2px 7px; font-size:12px; cursor:pointer; line-height:1; }
   #plEditNameWrap .iconbtn:hover { color:var(--fg); }
 
-  .pligrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(128px,1fr)); gap:10px; margin-top:8px; }
+  .pligrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; margin-top:8px; }
   .pli { position:relative; border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#0d141c; cursor:grab; }
   .pli.sortable-ghost { opacity:.35; } .pli.sortable-chosen { border-color:var(--acc); }
   .pli .plithumb { height:82px; display:flex; align-items:center; justify-content:center; background:#000; font-size:28px; }
   .pli .plithumb img { width:100%; height:100%; object-fit:cover; }
   .pli .plinum { position:absolute; top:4px; left:4px; background:var(--acc); color:#fff; font-size:11px;
     font-weight:700; min-width:18px; height:18px; border-radius:5px; display:flex; align-items:center; justify-content:center; padding:0 4px; }
+  .pli .plitype { position:absolute; top:4px; right:4px; background:#000a; border-radius:5px; font-size:12px; padding:1px 4px; line-height:1; }
   .pli.susp { opacity:.5; }
   .pli .pliname { padding:5px 7px 2px; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .pli .pliact { display:flex; gap:2px; align-items:center; padding:0 5px 6px; font-size:11px; }
-  .pli .pliact button { border:0; background:transparent; color:var(--mut); cursor:pointer; padding:1px 4px; font-size:12px; }
-  .pli .pliact button:hover { color:var(--fg); }
-  .pli .pliact .pliDur { width:52px; font-size:11px; padding:2px 4px; }
+  .pli .pliact { display:flex; align-items:center; justify-content:space-between; gap:4px; padding:2px 6px 6px; }
+  .pli .plidur { flex:1; min-width:0; }
+  .pli .plidur .pliDur { width:100%; font-size:11px; padding:2px 4px; }
+  .pli .plidurlock { font-size:11px; color:var(--mut); }
+  .pli .plibtns { display:flex; gap:1px; flex:0 0 auto; }
+  .pli .plibtns button { border:0; background:transparent; color:var(--mut); cursor:pointer; padding:2px 4px; font-size:13px; line-height:1; }
+  .pli .plibtns button:hover { color:var(--fg); }
 
   #plAddBox { width:96vw; max-width:96vw; height:94vh; max-height:94vh; display:flex; flex-direction:column; gap:10px; overflow:hidden; }
   #plAddBody { flex:1; display:grid; grid-template-columns:210px 1fr 200px 1fr; gap:12px; min-height:0; }
@@ -219,6 +223,17 @@
   #plAddPlInfo .pir { display:flex; justify-content:space-between; gap:8px; padding:3px 0; }
   #plAddPlInfo .pir span { color:var(--mut); }
   #plAddTree .fnode { padding:4px 6px; }
+  #plAddPlBar { flex:0 0 auto; border:1px solid var(--line); border-radius:9px; padding:8px; background:#0b1219; }
+  #plAddPlRow { display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; min-height:70px; }
+  #plAddPlRow .pli-mini { flex:0 0 auto; width:96px; border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#0d141c; position:relative; cursor:grab; }
+  #plAddPlRow .pli-mini.sortable-ghost { opacity:.35; }
+  #plAddPlRow .pli-mini .t { aspect-ratio:16/10; display:flex; align-items:center; justify-content:center; background:#000; font-size:16px; }
+  #plAddPlRow .pli-mini .t img { width:100%; height:100%; object-fit:cover; }
+  #plAddPlRow .pli-mini .n { padding:2px 4px; font-size:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #plAddPlRow .pli-mini .num { position:absolute; top:2px; left:2px; background:var(--acc); color:#fff; font-size:9px; font-weight:700; padding:0 4px; border-radius:4px; }
+  #plAddPlRow .pli-mini .x { position:absolute; top:2px; right:2px; background:#000a; color:#fff; border:0; border-radius:4px;
+    font-size:11px; line-height:1; padding:1px 4px; cursor:pointer; }
+  #plAddPlRow .pli-mini .x:hover { background:#e06a6a; }
   @media (max-width:1000px) { #plAddBody { grid-template-columns:1fr; } #plAddMid { flex-direction:row; flex-wrap:wrap; align-items:center; } #plAddSend, #plAddConfirm { width:auto; } }
   .assetgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:12px; }
   .atile { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#0d141c; cursor:grab; }
@@ -526,12 +541,19 @@
         <button id="plAddConfirm">Adicionar<br>à playlist</button>
       </div>
       <div id="plAddSelCol">
-        <div class="pladd-col-h" style="display:flex;justify-content:space-between;align-items:center">
+        <div class="pladd-col-h" style="display:flex;justify-content:space-between;align-items:center;gap:6px">
           <span>Seleção (<span id="plAddSelN">0</span>)</span>
-          <button class="ghost" id="plAddSendBack">← remover</button>
+          <span style="display:flex;gap:4px">
+            <button class="ghost" id="plAddSendBack">← remover</button>
+            <button class="danger" id="plAddClear">limpar</button>
+          </span>
         </div>
         <div id="plAddSelGrid" class="pladd-grid"></div>
       </div>
+    </div>
+    <div id="plAddPlBar">
+      <div class="pladd-col-h">Playlist atual — <span id="plAddPlName2">—</span> · arraste p/ reordenar · ✕ remove</div>
+      <div id="plAddPlRow"></div>
     </div>
   </div>
 </div>
@@ -1463,18 +1485,21 @@
           : (it.thumb_url
               ? '<img src="' + API + it.thumb_url + '" alt="" onerror="this.parentNode.textContent=this.parentNode.dataset.g">'
               : g);
+        var typeIcon = it.type === 'video' ? '🎬' : it.type === 'audio' ? '🎵' : '🖼️';
         var dur = it.duration_locked
-          ? '<span title="duração do vídeo">' + Math.round(it.duration) + 's 🔒</span>'
-          : '<input class="pliDur" type="number" min="0.5" step="0.5" value="' + it.duration + '">';
+          ? '<span class="plidurlock" title="duração do vídeo">' + Math.round(it.duration) + 's 🔒</span>'
+          : '<input class="pliDur" type="number" min="0.5" step="0.5" value="' + it.duration + '" title="duração (s)">';
         var sdot = it.schedule ? (it.active_now ? '<span style="color:#5fd08a">●</span>' : '<span style="color:#e0a12f">●</span>') : '';
         tile.innerHTML =
           '<span class="plinum">' + (idx + 1) + '</span>' +
+          '<span class="plitype" title="' + it.type + '">' + typeIcon + '</span>' +
           '<div class="plithumb" data-g="' + g + '">' + thumb + '</div>' +
           '<div class="pliname" title="' + esc(it.filename) + '">' + esc(it.filename) + '</div>' +
-          '<div class="pliact">' + dur +
-          ' <button class="pli-sched" title="horário">🕐' + sdot + '</button>' +
-          ' <button class="pli-susp" title="' + (it.suspended ? 'retomar' : 'suspender') + '">' + (it.suspended ? '▶' : '⊘') + '</button>' +
-          ' <button class="pli-del" title="remover">✕</button></div>';
+          '<div class="pliact"><span class="plidur">' + dur + '</span>' +
+          '<span class="plibtns">' +
+          '<button class="pli-sched" title="horário">🕐' + sdot + '</button>' +
+          '<button class="pli-susp" title="' + (it.suspended ? 'retomar' : 'suspender') + '">' + (it.suspended ? '▶' : '⊘') + '</button>' +
+          '<button class="pli-del" title="remover">✕</button></span></div>';
         grid.appendChild(tile);
 
         tile.querySelector('.pli-sched').onclick = function () { openSchedEditor(it); };
@@ -1520,18 +1545,36 @@
     if (!state.activePlaylist) { _plAddPlItems = []; return Promise.resolve(); }
     return api('/api/playlists/' + state.activePlaylist).then(function (d) { _plAddPlItems = d.items || []; });
   }
+  // seleção persiste por playlist: se fechar sem querer, ao voltar continua lá
+  function plAddSelKey() { return 'a3k_plsel_' + state.activePlaylist; }
+  function plAddSaveSel() {
+    try {
+      if (_plAddSel.length) localStorage.setItem(plAddSelKey(), JSON.stringify(_plAddSel));
+      else localStorage.removeItem(plAddSelKey());
+    } catch (e) {}
+  }
+  function plAddLoadSel() {
+    var arr = [];
+    try { arr = JSON.parse(localStorage.getItem(plAddSelKey()) || '[]'); } catch (e) { arr = []; }
+    var byId = {}; (state.assets || []).forEach(function (a) { byId[a.id] = 1; });
+    _plAddSel = (Array.isArray(arr) ? arr : []).map(Number).filter(function (id) { return byId[id]; });
+  }
   function openPlAdd() {
-    _plAddMarked = []; _plAddSel = []; _plAddSelPick = null;
+    _plAddMarked = []; _plAddSelPick = null;
     $('plAddModal').classList.remove('hidden');
-    var p = (state.playlists || []).find(function (x) { return x.id === state.activePlaylist; });
-    $('plAddPlName').textContent = (p && p.name) || ('#' + state.activePlaylist);
     Promise.all([loadAssets(), plAddRefreshPl()]).then(function () {
-      renderPlAddTree(); renderPlAddCrumb(); renderPlAddGrid(); renderPlAddSel(); renderPlAddPlInfo();
+      plAddLoadSel();
+      renderPlAddTree(); renderPlAddCrumb(); renderPlAddGrid(); renderPlAddSel(); renderPlAddPlInfo(); renderPlAddPlRow();
     });
   }
   $('plAddClose').onclick = function () {
+    plAddSaveSel();
     $('plAddModal').classList.add('hidden');
     loadPlaylistItems(); loadPlaylists();
+  };
+  $('plAddClear').onclick = function () {
+    _plAddSel = []; _plAddSelPick = null; plAddSaveSel();
+    renderPlAddGrid(); renderPlAddSel();
   };
   function fmtDateBr(ymd) {
     if (!ymd) return '';
@@ -1540,7 +1583,9 @@
   }
   function renderPlAddPlInfo() {
     var p = (state.playlists || []).find(function (x) { return x.id === state.activePlaylist; }) || {};
-    $('plAddPlName').textContent = p.name || ('#' + state.activePlaylist);
+    var nm = p.name || ('#' + state.activePlaylist);
+    $('plAddPlName').textContent = nm;
+    if ($('plAddPlName2')) $('plAddPlName2').textContent = nm;
     var seen = {}, bytes = 0;
     _plAddPlItems.forEach(function (it) { if (it.hash && !seen[it.hash]) { seen[it.hash] = 1; bytes += (it.size_bytes || 0); } });
     $('plAddInfoSize').textContent = fmtMB(bytes);
@@ -1635,19 +1680,54 @@
       g.appendChild(t);
     });
     $('plAddSendBack').disabled = _plAddSelPick == null;
+    $('plAddClear').disabled = !_plAddSel.length;
     $('plAddConfirm').disabled = !_plAddSel.length;
     $('plAddConfirm').innerHTML = 'Adicionar<br>à playlist' +
       (dups ? '<br><span style="font-weight:400;font-size:11px">⚠ ' + dups + ' repetido</span>' : '');
   }
+  var _plAddPlSortable = null;
+  function renderPlAddPlRow() {
+    var row = $('plAddPlRow'); if (!row) return;
+    row.innerHTML = '';
+    if (!_plAddPlItems.length) { row.innerHTML = '<span class="muted" style="font-size:12px">playlist vazia</span>'; return; }
+    _plAddPlItems.forEach(function (it, i) {
+      var d = document.createElement('div'); d.className = 'pli-mini'; d.setAttribute('data-item', it.id);
+      d.innerHTML = '<span class="num">' + (i + 1) + '</span><button class="x" title="remover">✕</button>' +
+        '<div class="t" data-g="' + assetGlyph(it.type) + '">' + plAddMiniThumb(it) + '</div>' +
+        '<div class="n" title="' + esc(it.filename) + '">' + esc(it.filename) + '</div>';
+      d.querySelector('.x').onclick = function (e) {
+        e.stopPropagation();
+        api('/api/playlists/' + state.activePlaylist + '/items/' + it.id, { method: 'DELETE' })
+          .then(function () {
+            log('item removido');
+            Promise.all([plAddRefreshPl(), loadPlaylistItems(), loadPlaylists()])
+              .then(function () { renderPlAddGrid(); renderPlAddSel(); renderPlAddPlInfo(); renderPlAddPlRow(); });
+          }).catch(function (er) { log(er.message); });
+      };
+      row.appendChild(d);
+    });
+    if (_plAddPlSortable) _plAddPlSortable.destroy();
+    _plAddPlSortable = window.Sortable && window.Sortable.create(row, {
+      animation: 120, ghostClass: 'sortable-ghost', draggable: '.pli-mini',
+      onEnd: function () {
+        var ids = Array.prototype.map.call(row.querySelectorAll('.pli-mini'), function (r) { return Number(r.getAttribute('data-item')); });
+        jpost('/api/playlists/' + state.activePlaylist + '/order', { item_ids: ids }, 'PUT')
+          .then(function () {
+            Promise.all([plAddRefreshPl(), loadPlaylistItems(), loadPlaylists()])
+              .then(function () { renderPlAddPlInfo(); renderPlAddPlRow(); });
+          }).catch(function (e) { log('ordenar: ' + e.message); plAddRefreshPl().then(renderPlAddPlRow); });
+      },
+    });
+  }
   $('plAddSend').onclick = function () {
     _plAddMarked.forEach(function (id) { if (_plAddSel.indexOf(id) < 0) _plAddSel.push(id); });
-    _plAddMarked = []; renderPlAddGrid(); renderPlAddSel();
+    _plAddMarked = []; plAddSaveSel(); renderPlAddGrid(); renderPlAddSel();
   };
   $('plAddSendBack').onclick = function () {
     if (_plAddSelPick == null) return;
     var i = _plAddSel.indexOf(_plAddSelPick);
     if (i >= 0) _plAddSel.splice(i, 1);
-    _plAddSelPick = null; renderPlAddGrid(); renderPlAddSel();
+    _plAddSelPick = null; plAddSaveSel(); renderPlAddGrid(); renderPlAddSel();
   };
   $('plAddConfirm').onclick = function () {
     if (!_plAddSel.length || !state.activePlaylist) return;
@@ -1658,9 +1738,9 @@
       if (i >= ids.length) {
         log('adicionados ' + ok + '/' + ids.length + ' à playlist' +
           (wasDup ? ' — ' + wasDup + ' ja existia(m), duplicado(s) permitido(s)' : ''));
-        _plAddSel = []; _plAddSelPick = null;
+        _plAddSel = []; _plAddSelPick = null; plAddSaveSel();
         Promise.all([plAddRefreshPl(), loadPlaylistItems(), loadPlaylists()]).then(function () {
-          renderPlAddTree(); renderPlAddGrid(); renderPlAddSel(); renderPlAddPlInfo();
+          renderPlAddTree(); renderPlAddGrid(); renderPlAddSel(); renderPlAddPlInfo(); renderPlAddPlRow();
         });
         return;
       }
